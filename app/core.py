@@ -11,7 +11,7 @@ import sqlite3
 import time
 import uuid
 
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}\Z")
 LOCAL_TOOLS = {"Bash", "apply_patch"}
 EVENTS = {"SessionStart", "SessionEnd", "PermissionRequest", "PostToolUse", "Stop", "Interrupt"}
@@ -21,7 +21,9 @@ DEFAULTS = {"paused": False, "chime_seconds": 10, "push_seconds": 120,
 
 def state_home() -> Path:
     override = os.environ.get("CONTROLLEDYOLO_HOME")
-    return Path(override) if override else Path(os.environ.get("LOCALAPPDATA", Path.home() / ".local/share")) / "ControlledYOLO/state"
+    # MSIX-packaged Codex can virtualize LocalAppData. A profile-root folder is
+    # shared by packaged hook processes and ordinary Windows Startup processes.
+    return Path(override) if override else Path.home() / "ControlledYOLO/state"
 
 
 def clean_label(value, fallback="Chat"):

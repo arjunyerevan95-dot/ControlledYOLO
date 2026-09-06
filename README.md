@@ -6,11 +6,11 @@ This is a successor to the working PowerShell utility. The original download rem
 
 ## Install
 
-Download `downloads/ControlledYOLO-2.0.0.zip`, extract it, and run `Install.cmd`. The adjacent `.sha256` file contains its checksum. The copy-paste bootstrap is in `docs/BOOTSTRAP.txt`.
+Download `downloads/ControlledYOLO-2.0.1.zip`, extract it, and run `Install.cmd`. The adjacent `.sha256` file contains its checksum. The copy-paste bootstrap is in `docs/BOOTSTRAP.txt`.
 
 The installer uses your existing Python 3.10+ with tkinter. If it cannot find one, it installs Python 3.12 for your Windows user with winget. No administrator account is required. A Windows CI build also produces a package with a bundled executable that does not require Python.
 
-The app lives under `%LOCALAPPDATA%\ControlledYOLO\app`, with its settings under `%LOCALAPPDATA%\ControlledYOLO\state`. The installer adds Desktop and Startup shortcuts. `Install.ps1 -NoStartup` omits the Startup shortcut.
+The app lives under `%USERPROFILE%\ControlledYOLO\app`, with its settings under `%USERPROFILE%\ControlledYOLO\state`. Using the user-profile folder avoids Microsoft Store/MSIX app-data redirection, so desktop startup and Codex hooks share the same files. The installer adds Desktop and Startup shortcuts. `Install.ps1 -NoStartup` omits the Startup shortcut.
 
 Setup merges ControlledYOLO's entries into the current Codex host's `hooks.json`, preserving existing entries and backing up the original file. It uses `CODEX_HOME` when that environment variable is set, otherwise your user profile's `.codex` directory. **Review the new hook definitions once using `/hooks` in Codex.** Setup does not edit hook trust records or change Codex's permission, sandbox, organization, or account settings.
 

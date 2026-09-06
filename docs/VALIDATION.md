@@ -19,3 +19,9 @@ Live acceptance checks after installation:
 7. Test the ntfy channel on the actual phone if configured. A successful HTTP send alone is not delivery proof.
 
 V2 does not auto-answer all possible cards. Native automatic decisions are limited to supported local-tool permission requests. Visible-card detection is advisory. App-server integration for threads owned by a custom host is a possible later extension, not a feature claimed by this build.
+
+## Microsoft Store installation correction in 2.0.1
+
+Live installation exposed MSIX redirection of LocalAppData into the desktop app's package cache. Version 2.0.1 installs the app and its shared state directly under the Windows user profile so a normal Startup process and a packaged Codex process use the same location. A regression test verifies the default state directory ignores redirected LocalAppData.
+
+The installed Codex 0.153.3 runtime successfully discovered all six native hooks for the three UE5 worker workspaces through its read-only hooks/list API. It reported those new definitions as untrusted, without parse errors. That runtime trust review is a remaining user step, not a successful automatic-approval test.

@@ -6,8 +6,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $source = $PSScriptRoot
-$destination = Join-Path $env:LOCALAPPDATA 'ControlledYOLO\app'
-$state = Join-Path $env:LOCALAPPDATA 'ControlledYOLO\state'
+$destination = Join-Path $env:USERPROFILE 'ControlledYOLO\app'
+$state = Join-Path $env:USERPROFILE 'ControlledYOLO\state'
 $pythonPath = $null
 $bundled = Test-Path -LiteralPath (Join-Path $source 'ControlledYOLO.exe')
 if (-not $bundled) {

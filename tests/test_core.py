@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
-from core import Store
+from core import Store, state_home
 from hooks import merge_hooks, register
 from main import select_title
 from notifications import validate_url, send
@@ -176,6 +176,13 @@ class StateTests(unittest.TestCase):
 
 
 class HookSetupTests(unittest.TestCase):
+    def test_default_state_path_does_not_depend_on_msix_localappdata(self):
+        with patch.dict(os.environ, {"LOCALAPPDATA": "C:/Some/Packaged/Cache"}, clear=True):
+            with patch("core.Path.home", return_value=Path("C:/Users/example")):
+                self.assertEqual(state_home(), Path("C:/Users/example/ControlledYOLO/state"))
+        with patch.dict(os.environ, {"CONTROLLEDYOLO_HOME": "C:/Custom/state"}):
+            self.assertEqual(state_home(), Path("C:/Custom/state"))
+
     def test_preserves_unrelated_handlers_and_is_idempotent(self):
         original = {"description": "My hooks", "hooks": {"PermissionRequest": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "existing-check"}]}], "OtherEvent": []}}
         copied = copy.deepcopy(original)

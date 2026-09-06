@@ -16,5 +16,4 @@ foreach ($folder in @([Environment]::GetFolderPath('Desktop'),[Environment]::Get
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
 }
 Write-Host 'ControlledYOLO stopped and removed from startup. Its hooks were removed; other hooks were preserved.'
-Write-Host 'App files and local settings are retained. You may delete the ControlledYOLO folder in LocalAppData when ready.'
-
+Write-Host 'App files and local settings are retained. You may delete the ControlledYOLO folder in your user profile when ready.'

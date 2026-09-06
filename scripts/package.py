@@ -18,7 +18,7 @@ paths.extend(root / name for name in ("README.md", "Install.cmd", "Install.ps1",
 paths.append(root / "downloads/CodexTargetedDumbMode.zip.b64")
 out = root / "dist"
 out.mkdir(exist_ok=True)
-name = "ControlledYOLO-2.0.0-windows" if args.exe else "ControlledYOLO-2.0.0"
+name = "ControlledYOLO-2.0.1-windows" if args.exe else "ControlledYOLO-2.0.1"
 target = out / (name + ".zip")
 manifest = {str(p.relative_to(root)).replace("\\", "/"): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(paths)}
 runtime = Path(args.exe).parent if args.exe else None
