@@ -8,6 +8,8 @@ Regression coverage includes the production PowerShell recognition function agai
 
 At patch time the reported card was no longer exposed. Codex logs record a subsequent approval and Unreal has restarted. That earlier approval must not be attributed to this update. A new live instance of the collapsed PowerShell card is still needed for end-to-end acceptance; regression checks reproduce the captured layout without approving any real request.
 
+Installation verified: 2.0.3 is running with all three UE5 workers still selected in Auto local, unpaused. All 39 tests passed on the PC, including the eight production PowerShell layout cases. The installed source matches the checksum-verified package. The obsolete reminder for the already-approved screenshot request was acknowledged; the history remains intact.
+
 ## 2.0.2
 
 The tray and repeated chime are working on the user’s Windows PC, with three UE5 worker chats selected. The six ControlledYOLO hooks were reviewed and trusted through the normal Codex interface. Unrelated hook entries were preserved.
