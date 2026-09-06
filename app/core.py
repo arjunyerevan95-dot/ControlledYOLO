@@ -34,7 +34,14 @@ class Store:
         self.home.mkdir(parents=True, exist_ok=True)
         self.path = self.home / "state.sqlite3"
         self.clock = clock
+        # Keep the WAL open while this Store lives. This prevents a checkpoint/delete
+        # cycle on every GUI poll and lets concurrent hook processes read settings.
+        self._keeper = sqlite3.connect(self.path, timeout=2, check_same_thread=False)
+        self._keeper.execute("PRAGMA journal_mode=WAL")
+        self._keeper.execute("PRAGMA synchronous=NORMAL")
         with self.db() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == 1:
+                return
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS chats(
@@ -51,11 +58,22 @@ class Store:
             """)
             for key, value in DEFAULTS.items():
                 db.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", (key, json.dumps(value)))
+            db.execute("PRAGMA user_version=1")
+
+    def close(self):
+        keeper = getattr(self, "_keeper", None)
+        if keeper is not None:
+            self._keeper = None
+            keeper.close()
+
+    def __del__(self):
+        self.close()
 
     @contextlib.contextmanager
     def db(self):
         db = sqlite3.connect(self.path, timeout=2)
         db.row_factory = sqlite3.Row
+        db.execute("PRAGMA synchronous=NORMAL")
         try:
             with db:
                 yield db
@@ -129,14 +147,16 @@ class Store:
         if not isinstance(session, str) or not SESSION_ID.fullmatch(session):
             return {}
         kind = event["hook_event_name"]
-        self.upsert_chat(session, source="hook", native=True)
         turn = str(event.get("turn_id") or "")[:200]
         tool = str(event.get("tool_name") or "Unknown tool")[:200]
         payload = json.dumps(event.get("tool_input"), sort_keys=True, separators=(",", ":"))
         fingerprint = hashlib.sha256(payload.encode()).hexdigest()
-        now = self.clock()
         with self.db() as db:
             db.execute("BEGIN IMMEDIATE")
+            # Evaluate expiry and heartbeat after acquiring the transaction lock.
+            now = self.clock()
+            db.execute("INSERT OR IGNORE INTO chats(id,title,source) VALUES (?,?,'hook')", (session, session))
+            db.execute("UPDATE chats SET last_seen=?,native_seen=?,source='hook' WHERE id=?", (now, now, session))
             self._set(db, "native_event_at", now)
             chat = self._active(db, session, now)
             if kind == "PermissionRequest":

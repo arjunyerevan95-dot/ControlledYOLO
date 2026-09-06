@@ -29,6 +29,7 @@ class StateTests(unittest.TestCase):
         self.store.heartbeat("test")
 
     def tearDown(self):
+        self.store.close()
         self.temp.cleanup()
 
     def event(self, session="one", kind="PermissionRequest", tool="Bash", turn="turn-a", command="echo hello"):
@@ -112,6 +113,7 @@ class StateTests(unittest.TestCase):
         other = Store(self.temp.name, clock=lambda: self.now)
         self.assertEqual(len(other.attention()), 1)
         self.assertNotIn(b"secret-argument-not-to-be-stored", self.store.path.read_bytes())
+        other.close()
 
     def test_many_chats_and_concurrent_requests(self):
         for n in range(25):
@@ -121,6 +123,20 @@ class StateTests(unittest.TestCase):
             result = list(executor.map(lambda n: self.store.handle_hook(self.event(f"chat-{n}")), range(25)))
         self.assertTrue(all(result))
         self.assertEqual(len(self.store.requests()), 25)
+
+    def test_separate_hook_processes_share_selected_policy(self):
+        import time
+        self.store.clock = time.time
+        self.store.heartbeat("live-test")
+        entry = Path(__file__).resolve().parents[1] / "app/main.py"
+        def invoke(n):
+            return subprocess.run([sys.executable, str(entry), "--hook"], input=json.dumps(self.event(command=f"test-{n}")).encode(),
+                                  capture_output=True, env=dict(os.environ, CONTROLLEDYOLO_HOME=self.temp.name), timeout=8)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            results = list(executor.map(invoke, range(4)))
+        for result in results:
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["hookSpecificOutput"]["decision"]["behavior"], "allow")
 
     def test_visible_cards_do_not_authorize_and_duplicate_title_ignored(self):
         self.store.visible_snapshot([{"title": "Same title", "key": "button-a"}])
@@ -223,6 +239,18 @@ class PushTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == "nt", "Windows GUI and PowerShell smoke tests")
 class WindowsTests(unittest.TestCase):
+    def test_tray_starts_updates_and_closes(self):
+        from tray import Tray
+        tray = Tray(lambda action: None)
+        try:
+            self.assertTrue(tray.start(), tray.error or "Tray did not initialize")
+            tray.state("attention", "ControlledYOLO Windows smoke test")
+        finally:
+            tray.close()
+            if tray.thread.is_alive():
+                tray.thread.join(3)
+        self.assertFalse(tray.thread.is_alive())
+
     def test_powershell_syntax(self):
         root = Path(__file__).resolve().parents[1]
         code = "$files = Get-ChildItem -LiteralPath $args[0] -Filter *.ps1 -Recurse; foreach ($file in $files) { $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors) | Out-Null; if ($errors.Count) { $errors | Out-String | Write-Error; exit 1 } }"
@@ -244,8 +272,8 @@ class WindowsTests(unittest.TestCase):
             app.root.after(1200, app.quit)
             app.run()
             self.assertEqual(store.get("heartbeat"), {})
+            store.close()
 
 
 if __name__ == "__main__":
     unittest.main()
-

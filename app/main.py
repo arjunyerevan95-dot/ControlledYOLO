@@ -517,6 +517,7 @@ def main():
         App(store, args.minimized, args.demo).run()
     finally:
         instance.close()
+        store.close()
         if temporary:
             temporary.cleanup()
     return 0

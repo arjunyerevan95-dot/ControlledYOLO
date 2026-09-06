@@ -58,6 +58,8 @@ class Tray:
                                             ctypes.c_int, ctypes.c_int, w.HWND, w.HMENU, w.HINSTANCE, w.LPVOID]
         self.user.CreateWindowExW.restype = w.HWND
         self.user.RegisterClassW.argtypes = [ctypes.POINTER(WNDCLASS)]
+        self.user.RegisterWindowMessageW.argtypes = [w.LPCWSTR]
+        self.user.RegisterWindowMessageW.restype = w.UINT
         self.user.LoadImageW.argtypes = [w.HINSTANCE, w.LPCWSTR, w.UINT, ctypes.c_int, ctypes.c_int, w.UINT]
         self.user.LoadImageW.restype = w.HANDLE
         self.user.DestroyIcon.argtypes = [w.HICON]
@@ -149,4 +151,3 @@ class Tray:
     def close(self):
         if self.hwnd:
             self.user.PostMessageW(self.hwnd, 0x0010, 0, 0)
-

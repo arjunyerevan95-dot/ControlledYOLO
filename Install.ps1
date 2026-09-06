@@ -49,7 +49,7 @@ if (Test-Path -LiteralPath (Join-Path $destination 'ControlledYOLO.exe')) {
     & (Join-Path $destination 'ControlledYOLO.exe') --request-exit
     if ($LASTEXITCODE -ne 0) { throw 'Close ControlledYOLO before updating.' }
 }
-foreach ($item in @('app','Launch.ps1','Uninstall.ps1','Uninstall.cmd','README.md','docs','downloads')) {
+foreach ($item in @('app','_internal','Launch.ps1','Uninstall.ps1','Uninstall.cmd','README.md','docs','downloads')) {
     $from = Join-Path $source $item
     if (Test-Path -LiteralPath $from) { Copy-Item -LiteralPath $from -Destination $destination -Recurse -Force }
 }
@@ -88,4 +88,3 @@ foreach ($path in $shortcutPaths) {
 Write-Host 'ControlledYOLO 2 installed. Open /hooks in Codex and review the new hook definitions once.'
 Write-Host 'The tray app shows whether native events have actually been observed. Choose additional chats in its Chats tab.'
 if (-not $NoLaunch) { & (Join-Path $destination 'Launch.ps1') }
-

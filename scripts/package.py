@@ -21,8 +21,10 @@ out.mkdir(exist_ok=True)
 name = "ControlledYOLO-2.0.0-windows" if args.exe else "ControlledYOLO-2.0.0"
 target = out / (name + ".zip")
 manifest = {str(p.relative_to(root)).replace("\\", "/"): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(paths)}
-if args.exe:
-    manifest["ControlledYOLO.exe"] = hashlib.sha256(Path(args.exe).read_bytes()).hexdigest()
+runtime = Path(args.exe).parent if args.exe else None
+runtime_files = sorted(p for p in runtime.rglob("*") if p.is_file()) if runtime else []
+for p in runtime_files:
+    manifest[str(p.relative_to(runtime)).replace("\\", "/")] = hashlib.sha256(p.read_bytes()).hexdigest()
 with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
     def add(name, data):
         info = zipfile.ZipInfo("ControlledYOLO/" + name, date_time=(2026, 9, 6, 0, 0, 0))
@@ -31,8 +33,8 @@ with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as arch
         archive.writestr(info, data)
     for p in sorted(paths):
         add(str(p.relative_to(root)).replace("\\", "/"), p.read_bytes())
-    if args.exe:
-        add("ControlledYOLO.exe", Path(args.exe).read_bytes())
+    for p in runtime_files:
+        add(str(p.relative_to(runtime)).replace("\\", "/"), p.read_bytes())
     add("MANIFEST.json", (json.dumps(manifest, indent=2) + "\n").encode())
 with zipfile.ZipFile(target) as archive:
     assert archive.testzip() is None

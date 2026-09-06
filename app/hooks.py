@@ -31,7 +31,7 @@ def merge_hooks(config, command, remove=False):
                 kept.append(item)
         if not remove:
             kept.append({"hooks": [{"type": "command", "command": command, "commandWindows": command,
-                                    "timeout": 3, "statusMessage": MARKER}]})
+                                    "timeout": 3 if event in {"SessionEnd", "Interrupt"} else 8, "statusMessage": MARKER}]})
         if kept:
             hooks[event] = kept
         else:
