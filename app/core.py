@@ -11,7 +11,7 @@ import sqlite3
 import time
 import uuid
 
-VERSION = "2.0.1"
+VERSION = "2.0.2"
 SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}\Z")
 LOCAL_TOOLS = {"Bash", "apply_patch"}
 EVENTS = {"SessionStart", "SessionEnd", "PermissionRequest", "PostToolUse", "Stop", "Interrupt"}
@@ -28,6 +28,27 @@ def state_home() -> Path:
 
 def clean_label(value, fallback="Chat"):
     return " ".join(str(value or fallback).split())[:160]
+
+
+def index_titles(path):
+    """Read current names in the append-only index; incomplete input fails closed."""
+    path = Path(path)
+    if not path.is_file() or path.stat().st_size > 32_000_000:
+        return {}
+    titles = {}
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        row = json.loads(line)
+        session = row.get("id") or row.get("thread_id")
+        title = row.get("thread_name") or row.get("title")
+        if session and title and SESSION_ID.fullmatch(session):
+            titles[session] = clean_label(title)
+    return titles
+
+
+def terminal_command(command):
+    # Recognition, not a command safety classifier. Auto local is user opt-in.
+    return isinstance(command, str) and 0 < len(command) <= 32768 and "\x00" not in command and bool(
+        re.match(r"^(?:python(?:3)?|py|pwsh|powershell|cmd|git|gh)(?:\.exe)?(?:\s|$)", command, re.I))
 
 
 class Store:
@@ -234,13 +255,42 @@ class Store:
                 row = db.execute("SELECT status FROM requests WHERE id=?", (key,)).fetchone()
                 if row and row[0] == "pending":
                     db.execute("UPDATE requests SET updated=? WHERE id=?", (now, key))
-                else:
+                elif not row:
                     db.execute("INSERT OR REPLACE INTO requests(id,session_id,turn_id,tool,fingerprint,source,status,created,updated) VALUES (?,?,?,?,?,?,?,?,?)",
                                (key, session, "", "Visible permission card", "", "visible", "pending", now, now))
             # A hidden card is not proof of resolution: keep its reminder until acknowledgment.
             self._set(db, "visible_observed_at", now)
             self._set(db, "visible_count", len(seen))
             self._set(db, "visible_current", seen)
+
+    def authorize_visible(self, card, current_titles):
+        """Fresh policy check for a structurally verified terminal UI card."""
+        if not isinstance(card, dict) or not terminal_command(card.get("command")):
+            return False
+        if card.get("running_command") != "Running " + card["command"] or not card.get("key"):
+            return False
+        session, title = card.get("session_id"), card.get("title")
+        if not isinstance(title, str) or current_titles.get(session) != title:
+            return False
+        if sum(t.casefold() == title.casefold() for t in current_titles.values()) != 1:
+            return False
+        with self.db() as db:
+            now = self.clock()
+            chat = self._active(db, session, now)
+            hb_age = now - self._get(db, "heartbeat", {}).get("at", 0)
+            return bool(chat and chat["title"] == title and chat["mode"] == "auto_local"
+                        and self._get(db, "visible_monitor", False)
+                        and not self._get(db, "paused", True) and 0 <= hb_age < 12
+                        and db.execute("SELECT COUNT(*) FROM chats WHERE title=? COLLATE NOCASE", (title,)).fetchone()[0] == 1)
+
+    def record_visible_approval(self, card):
+        """Record successful InvokePattern delivery, not command completion."""
+        with self.db() as db:
+            identity = hashlib.sha256((card["session_id"] + ":" + card["key"]).encode()).hexdigest()
+            key = self._get(db, "visible_current", {}).get(identity)
+            if key:
+                db.execute("UPDATE requests SET status='allowed_by_ui',acknowledged=1,updated=? WHERE id=? AND source='visible' AND status='pending'",
+                           (self.clock(), key))
 
     def import_index(self, path):
         """Optional best-effort labels, never parsed as approval state or policy."""

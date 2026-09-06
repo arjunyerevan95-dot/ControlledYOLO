@@ -1,27 +1,15 @@
 # Validation and host status
 
-The previous ControlledYOLO utility has been used successfully by Arjun. V2 preserves its published archive and introduces a separate native-hook and notification app.
+## 2.0.2
 
-This build is being tested against synthetic hook events and a temporary state database. No synthetic event is written into the user's live Codex configuration during tests. The tests verify exact session selection, duplicate titles, multiple concurrent chats, dead or paused app behavior, expiry, request correlation, and preservation of unrelated hooks.
+The tray and repeated chime are working on the user’s Windows PC, with three UE5 worker chats selected. The six ControlledYOLO hooks were reviewed and trusted through the normal Codex interface. Unrelated hook entries were preserved.
 
-Local verification: 25 core/integration tests passed, including 25 concurrent selected chats and four simultaneous separate hook processes. The first Windows run passed window construction and PowerShell parsing, and exposed SQLite write contention; the corrected version uses a persistent WAL connection and one transaction per event. The Windows workflow runs the full suite again, including the tray icon, before packaging a standalone app.
+Native events have not reached ControlledYOLO from the active desktop worker, including after reloading hooks. Trust and discovery are verified; native automatic approval is not. Version 2.0.2 therefore adds a Windows accessibility fallback for recognizable terminal cards. A direct InvokePattern test approved the initial waiting terminal request and the worker progressed, without changing the foreground window. The packaged monitor still requires its live acceptance check.
 
-At build time, the Remote Desktop Commander connection for Arjuk reported offline. Therefore this session cannot certify installation, visible-card detection, audible output, phone delivery, or native-hook coverage on that PC.
+Local verification: 33 core/integration tests passed; three Windows-specific tests are run on Windows. Added cases cover fresh policy in a separate process, selection and mode, pause, expiry, dead/future heartbeat, renamed/missing/duplicate titles, malformed index input, command mismatch, and exact reminder correlation. UI recognition itself is version-sensitive and requires live verification.
 
-Live acceptance checks after installation:
+The fallback never focuses a window, sends keystrokes, or switches chats. It requires an exposed chat/card accessibility tree. Minimized windows and hidden chats are not covered reliably. Native delivery, phone delivery, and simultaneous hidden-chat coverage remain unverified. Phone push is not configured on this PC.
 
-1. Review ControlledYOLO hooks in Codex and verify the app shows a real observed native event.
-2. Select Bootstrap ControlPlane Console and a second chat. Leave a third chat unselected.
-3. Exercise a harmless permission request in each selected chat and confirm its expected mode. The unselected chat must retain normal behavior.
-4. Confirm selected chat handling while its window is hidden, for requests delivered through native hooks.
-5. Pause the tray app and confirm normal approval behavior resumes; repeat after quitting it.
-6. Test the repeated chime and acknowledgment, then confirm a new request starts a new alert.
-7. Test the ntfy channel on the actual phone if configured. A successful HTTP send alone is not delivery proof.
+## Installation correction retained from 2.0.1
 
-V2 does not auto-answer all possible cards. Native automatic decisions are limited to supported local-tool permission requests. Visible-card detection is advisory. App-server integration for threads owned by a custom host is a possible later extension, not a feature claimed by this build.
-
-## Microsoft Store installation correction in 2.0.1
-
-Live installation exposed MSIX redirection of LocalAppData into the desktop app's package cache. Version 2.0.1 installs the app and its shared state directly under the Windows user profile so a normal Startup process and a packaged Codex process use the same location. A regression test verifies the default state directory ignores redirected LocalAppData.
-
-The installed Codex 0.153.3 runtime successfully discovered all six native hooks for the three UE5 worker workspaces through its read-only hooks/list API. It reported those new definitions as untrusted, without parse errors. That runtime trust review is a remaining user step, not a successful automatic-approval test.
+Microsoft Store/MSIX redirects LocalAppData for packaged processes. App and state live directly under the user profile so normal Windows Startup and packaged Codex hooks share files. The installer preserves selected chats and existing hook trust because hook command paths stay unchanged. The original utility archive remains unchanged.

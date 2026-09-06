@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import queue
 import subprocess
+import sys
 import threading
 import time
 
@@ -38,11 +39,13 @@ class VisibleMonitor:
             self.stop()
             self.status = "Windows only" if os.name != "nt" else "Off"
             return
-        titles = sorted(c["title"] for c in self.store.chats() if c["selected"])
-        signature = json.dumps(titles)
+        chats = [{"id": c["id"], "title": c["title"]} for c in self.store.chats() if c["selected"]]
+        runner = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, str(Path(__file__).with_name("main.py"))]
+        config = {"chats": chats, "runner": runner + ["--check-visible"]}
+        signature = json.dumps(config)
         if signature != self.signature:
             temporary = self.config.with_suffix(".tmp")
-            temporary.write_text(json.dumps({"titles": titles}), encoding="utf-8")
+            temporary.write_text(signature, encoding="utf-8")
             temporary.replace(self.config)
             self.signature = signature
         now = time.monotonic()
@@ -53,6 +56,8 @@ class VisibleMonitor:
                 self.status = message.get("error") or "Watching visible chats"
                 if not message.get("error"):
                     self.store.visible_snapshot(message.get("cards", []))
+                    for card in message.get("approved", []):
+                        self.store.record_visible_approval(card)
         if self.process and (self.process.poll() is not None or now - self.last_message > 20):
             self.stop()
             self.status = "Restarting monitor"

@@ -15,7 +15,7 @@ import time
 import traceback
 import uuid
 
-from core import Store, VERSION
+from core import Store, VERSION, index_titles
 
 
 def codex_home():
@@ -64,6 +64,23 @@ def hook_entry():
         # An empty successful response preserves Codex's ordinary approval flow.
         if sys.stderr:
             sys.stderr.write("ControlledYOLO could not process this event; normal approval continues.\n")
+    return 0
+
+
+def visible_check_entry():
+    allow = False
+    try:
+        data = sys.stdin.buffer.read(100_001)
+        if len(data) <= 100_000:
+            card = json.loads(data.decode("utf-8-sig"))
+            store = Store()
+            try:
+                allow = store.authorize_visible(card, index_titles(codex_home() / "session_index.jsonl"))
+            finally:
+                store.close()
+    except Exception:
+        pass
+    print(json.dumps({"allow": allow}), flush=True)
     return 0
 
 
@@ -189,7 +206,7 @@ class App:
         self.expiry = self.ttk.Combobox(controls, state="readonly", width=15, values=["Until I stop it", "30 minutes", "1 hour", "2 hours", "8 hours"])
         self.expiry.current(0)
         self.expiry.pack(side="left")
-        self.ttk.Label(self.chats_page, text="Select one or several rows, then choose a mode. Double-click a row to toggle watching.\nAuto local covers shell and file-edit permission requests exposed by Codex hooks, including that chat’s subagents.", wraplength=970).pack(anchor="w", pady=(14, 0))
+        self.ttk.Label(self.chats_page, text="Select one or several rows, then choose a mode. Double-click a row to toggle watching.\nAuto local uses native hooks where available and can approve recognized terminal cards in open chat windows without changing focus.", wraplength=970).pack(anchor="w", pady=(14, 0))
         self.selection_notice = self.tk.StringVar(value=self.store.get("selection_notice", ""))
         self.ttk.Label(self.chats_page, textvariable=self.selection_notice, foreground="#875c13", wraplength=960).pack(anchor="w", pady=(8, 0))
 
@@ -433,7 +450,7 @@ class App:
         selected = self.request_tree.selection()
         self.request_tree.delete(*self.request_tree.get_children())
         for row in rows:
-            status = {"pending": "Acknowledged" if row["acknowledged"] else "Needs attention", "allowed_by_hook": "Hook allowed", "tool_finished": "Tool finished", "ended": "Turn/session ended", "interrupted": "Interrupted"}.get(row["status"], row["status"])
+            status = {"pending": "Acknowledged" if row["acknowledged"] else "Needs attention", "allowed_by_hook": "Hook allowed", "allowed_by_ui": "UI approval sent", "tool_finished": "Tool finished", "ended": "Turn/session ended", "interrupted": "Interrupted"}.get(row["status"], row["status"])
             if row["push_error"] and row["status"] == "pending" and not row["acknowledged"]:
                 status += " · push retry"
             self.request_tree.insert("", "end", iid=row["id"], values=(row["title"], row["tool"], "Native" if row["source"] == "hook" else "Visible UI", status, time.strftime("%H:%M:%S", time.localtime(row["created"]))))
@@ -466,6 +483,7 @@ class App:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--hook", action="store_true")
+    parser.add_argument("--check-visible", action="store_true")
     parser.add_argument("--install-hooks", action="store_true")
     parser.add_argument("--remove-hooks", action="store_true")
     parser.add_argument("--minimized", action="store_true")
@@ -478,6 +496,8 @@ def main():
     args = parser.parse_args()
     if args.hook:
         return hook_entry()
+    if args.check_visible:
+        return visible_check_entry()
     if args.request_exit:
         store = Store()
         store.set("quit_requested", time.time())

@@ -6,7 +6,7 @@ This is a successor to the working PowerShell utility. The original download rem
 
 ## Install
 
-Download `downloads/ControlledYOLO-2.0.1.zip`, extract it, and run `Install.cmd`. The adjacent `.sha256` file contains its checksum. The copy-paste bootstrap is in `docs/BOOTSTRAP.txt`.
+Download `downloads/ControlledYOLO-2.0.2.zip`, extract it, and run `Install.cmd`. The adjacent `.sha256` file contains its checksum. The copy-paste bootstrap is in `docs/BOOTSTRAP.txt`.
 
 The installer uses your existing Python 3.10+ with tkinter. If it cannot find one, it installs Python 3.12 for your Windows user with winget. No administrator account is required. A Windows CI build also produces a package with a bundled executable that does not require Python.
 
@@ -33,7 +33,9 @@ MCP tools, account/authentication flows, Computer Use app permissions, and arbit
 
 The app displays **Native events observed** only after receiving real hook events from that runtime. Installing hook definitions alone does not establish support in an older desktop version. A Windows app, a WSL runtime, and a remote host may have different `CODEX_HOME` directories; install on the host that actually runs the chats.
 
-The optional visible-card adapter uses Windows UI Automation to recognize permission controls in visible Codex/ChatGPT windows. It only observes controls and never clicks them. It uses titles for advisory alerts and ignores known duplicate titles. It cannot observe hidden chats. Its alerts remain pending when a window disappears because disappearance does not prove resolution. The original utility remains available separately while native coverage is established.
+Version 2.0.2 adds an optional Windows UI Automation fallback for Auto local chats. It invokes Allow once without focusing the window, using the current card’s command, a matching Running command, and an exact unique chat header. Immediately before acting, a hidden helper checks the selected chat ID, latest index name, duplicate titles, expiry, pause state, and live tray heartbeat. The UI is checked again after that lookup. Recognized command prefixes are python, python3, py, pwsh, powershell, cmd, git, and gh, with optional .exe. These identify terminal cards; they are not a command safety review. Only command hashes are retained. Unknown layouts remain notify-only.
+
+ChatGPT need not have keyboard focus, but the fallback needs the chat and card exposed in Windows accessibility. It cannot switch to hidden chats, guarantee detection when minimized, or handle several chats hidden behind one active tab. Multiple selected chats are eligible when their cards are exposed in open windows. Native delivery remains necessary for complete hidden-chat coverage. A disappearing card alone does not clear a reminder; successful UI approval or acknowledgement does.
 
 ## Phone alerts
 
