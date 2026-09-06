@@ -11,7 +11,7 @@ import sqlite3
 import time
 import uuid
 
-VERSION = "2.0.3"
+VERSION = "2.0.4"
 SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}\Z")
 LOCAL_TOOLS = {"Bash", "apply_patch"}
 EVENTS = {"SessionStart", "SessionEnd", "PermissionRequest", "PostToolUse", "Stop", "Interrupt"}
@@ -279,7 +279,10 @@ class Store:
         """Fresh policy check for a structurally verified terminal UI card."""
         if not isinstance(card, dict) or not terminal_command(card.get("command")):
             return False
-        if card.get("running_command") != "Running " + card["command"] or not card.get("key"):
+        # Accessibility names flatten whitespace even when card text retains it.
+        # This is display correlation only; never normalize the executed command.
+        labels = {"Running " + card["command"], "Running " + " ".join(card["command"].split())}
+        if card.get("running_command") not in labels or not card.get("key"):
             return False
         session, title = card.get("session_id"), card.get("title")
         if not isinstance(title, str) or current_titles.get(session) != title:

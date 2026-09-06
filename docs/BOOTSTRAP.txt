@@ -1,6 +1,6 @@
 Install ControlledYOLO 2 on this Windows PC from the tray-v2 branch of https://github.com/arjunyerevan95-dot/ControlledYOLO.
 
-Use native terminal and file tools. Read README.md and docs/VALIDATION.md first. Download downloads/ControlledYOLO-2.0.3.zip and its adjacent .sha256 file from the same resolved commit, verify the ZIP hash, and extract it to a new folder.
+Use native terminal and file tools. Read README.md and docs/VALIDATION.md first. Download downloads/ControlledYOLO-2.0.4.zip and its adjacent .sha256 file from the same resolved commit, verify the ZIP hash, and extract it to a new folder.
 
 Run Install.ps1 with -SelectTitle 'Bootstrap ControlPlane Console' -Mode auto_local. The installer adds the tray app, startup shortcut and native hook entries while preserving existing hooks and the original ControlledYOLO installation. If duplicate titles prevent identification, ask me to choose the exact chat ID.
 

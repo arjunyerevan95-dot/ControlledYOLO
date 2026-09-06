@@ -90,6 +90,16 @@ class VisibleApprovalTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertFalse(terminal_command(command))
 
+    def test_flattened_accessibility_label_keeps_full_command_policy(self):
+        command = "git -C example push origin worker/test\nif ($LASTEXITCODE -ne 0) { throw 'Push failed' }\ngit -C example ls-remote origin"
+        self.card.update(command=command, running_command="Running " + " ".join(command.split()))
+        self.assertTrue(self.allowed())
+        self.assertEqual(self.card["command"], command)
+        for label in ["Running git -C example push origin worker/test", "Running git -C example push origin main",
+                      "Running " + " ".join(command.split()).replace("Push failed", "Different script")]:
+            self.card["running_command"] = label
+            self.assertFalse(self.allowed())
+
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell layout regression")
     def test_real_powershell_layout_function(self):
         root = Path(__file__).resolve().parents[1]
@@ -97,7 +107,7 @@ class VisibleApprovalTests(unittest.TestCase):
                                  str(root / "tests/visible_layout.ps1"), str(root / "app/VisibleMonitor.ps1")],
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("8 layout cases passed", result.stdout)
+        self.assertIn("11 layout cases passed", result.stdout)
 
     def test_approval_clears_only_exact_card_and_new_command_is_distinct(self):
         other = dict(self.card, key="button:different-command-hash")
@@ -135,6 +145,8 @@ class VisibleApprovalTests(unittest.TestCase):
         self.assertTrue(invoke(json.dumps(self.card).encode()))
         command = "$priorEditor = Get-Process -Id 21852\nif ($priorEditor) { $priorEditor.WaitForExit(30000) }"
         script_card = dict(self.card, command=command, running_command="Running " + command)
+        self.assertTrue(invoke(json.dumps(script_card).encode()))
+        script_card["running_command"] = "Running " + " ".join(command.split())
         self.assertTrue(invoke(json.dumps(script_card).encode()))
         self.store.set("paused", True)
         self.assertFalse(invoke(json.dumps(self.card).encode()))

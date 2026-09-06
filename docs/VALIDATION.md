@@ -1,5 +1,11 @@
 # Validation and host status
 
+## 2.0.4 multiline label correction
+
+Live inspection of a waiting multiline git command showed that the card text contained newlines while the Running accessibility name replaced those newlines with spaces. The previous exact comparison therefore rejected the same script. Version 2.0.4 compares the complete whitespace-flattened accessibility label, while preserving the original command for hashing and the final pre-approval UI check. It does not accept shortened or different commands. Selection, pause, expiry, duplicate-title, and heartbeat policy are unchanged.
+
+Regression coverage now uses the observed accessibility behavior rather than an idealized label, including multiline git scripts, repeated whitespace preserved in the original, truncated labels, and all earlier card layouts. InspectOnly offers a single non-invoking scan of actual exposed cards. Live installation/acceptance results are recorded below when verified.
+
 ## 2.0.3 matching correction
 
 The next reported terminal card exposed two matcher gaps: its script began with a PowerShell variable assignment, and its collapsed layout inserted Expand between the command text and Deny while omitting the approval dropdown. Version 2.0.3 recognizes those PowerShell forms and accepts both collapsed and expanded terminal layouts, without relaxing selected-chat, pause, expiry, heartbeat, or exact running-command checks.

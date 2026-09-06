@@ -28,7 +28,10 @@ $cases = @(
     @{name='unrelated interposed control'; command=$scriptCommand; extra='Send email'; expected=$false},
     @{name='different running command'; command=$scriptCommand; mismatch=$true; expected=$false},
     @{name='missing deny'; command=$scriptCommand; noDeny=$true; expected=$false},
-    @{name='offscreen command'; command=$scriptCommand; hidden=$true; expected=$false}
+    @{name='offscreen command'; command=$scriptCommand; hidden=$true; expected=$false},
+    @{name='multiline git push'; command=('git -C example push origin worker/test' + [Environment]::NewLine + 'if ($LASTEXITCODE -ne 0) { throw ''Push failed'' }' + [Environment]::NewLine + 'git -C example ls-remote origin'); expected=$true},
+    @{name='preserve repeated whitespace in original'; command=('python -c "print(''two  spaces'')"' + [Environment]::NewLine + 'git status'); expected=$true},
+    @{name='truncated running label'; command=$scriptCommand; truncated=$true; expected=$false}
 )
 foreach ($case in $cases) {
     $text=New-Node $case.command $textType
@@ -43,7 +46,12 @@ foreach ($case in $cases) {
     $button.Current.BoundingRectangle.Top=160
     $button.previous=$before
     $button.next=if($case.dropdown){New-Node 'Approval options' $buttonType}else{New-Node 'User messages' $groupType}
-    $running=New-Node $(if($case.mismatch){'Running another command'}else{'Running '+$case.command}) $buttonType
+    # Captured Chromium UIA behavior: the running name flattens all whitespace.
+    # Build independently from the production normalizer to test its contract.
+    $label = 'Running ' + (($case.command -split '\s+' | Where-Object {$_}) -join ' ')
+    if ($case.mismatch) { $label='Running another command' }
+    if ($case.truncated) { $label=$label.Substring(0,30) }
+    $running=New-Node $label $buttonType
     $window=[pscustomobject]@{running=$running}
     $window | Add-Member ScriptMethod FindAll {
         param($treeScope,$condition)
@@ -53,4 +61,4 @@ foreach ($case in $cases) {
     $expected=if($case.expected){$case.command}else{''}
     if ($actual -cne $expected) { throw ('Layout regression: ' + $case.name) }
 }
-Write-Output '8 layout cases passed'
+Write-Output '11 layout cases passed'

@@ -1,4 +1,4 @@
-param([string]$ConfigPath, [switch]$FunctionsOnly)
+param([string]$ConfigPath, [switch]$FunctionsOnly, [switch]$InspectOnly)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName UIAutomationClient
@@ -28,6 +28,10 @@ function Get-Target($window, $chats) {
     return $null
 }
 
+function Get-RunningLabel([string]$command) {
+    return 'Running ' + [regex]::Replace($command, '\s+', ' ').Trim()
+}
+
 function Get-TerminalCommand($window, $button) {
     # The dropdown is optional; collapsed long scripts add an Expand control.
     if ($button.Current.Name -cne 'Allow once') { return '' }
@@ -43,7 +47,7 @@ function Get-TerminalCommand($window, $button) {
     $r = $text.Current.BoundingRectangle
     $b = $button.Current.BoundingRectangle
     if ($r.Top -gt $b.Top -or ($b.Top - $r.Bottom) -gt 260) { return '' }
-    $condition = New-Object System.Windows.Automation.PropertyCondition($ae::NameProperty, "Running $command")
+    $condition = New-Object System.Windows.Automation.PropertyCondition($ae::NameProperty, (Get-RunningLabel $command))
     $running = @($window.FindAll($scope::Descendants, $condition) | Where-Object {
         $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and -not $_.Current.IsOffscreen
     })
@@ -120,8 +124,10 @@ while ($true) {
                     $seen[$key] = $true
                     if ($done.ContainsKey($key)) { $approved += $card; continue }
                     if (-not $command -or $buttons.Count -ne 1) { continue }
-                    $payload = @{session_id=$target.id; title=$target.title; key=$key; command=$command; running_command="Running $command"}
-                    if (-not (Test-FreshPolicy $config $payload)) { continue }
+                    $payload = @{session_id=$target.id; title=$target.title; key=$key; command=$command; running_command=(Get-RunningLabel $command)}
+                    $eligible = Test-FreshPolicy $config $payload
+                    if ($InspectOnly) { $card.recognized=$true; $card.eligible=$eligible; continue }
+                    if (-not $eligible) { continue }
                     # Re-read the UI after policy lookup; never switch chats or focus windows.
                     $currentTarget = Get-Target $window @($config.chats)
                     if (-not $currentTarget -or $currentTarget.id -ne $target.id -or $button.Current.IsOffscreen -or -not $button.Current.IsEnabled) { continue }
@@ -137,5 +143,6 @@ while ($true) {
     } catch {
         @{cards=@(); approved=@(); error='Visible-card monitor could not complete a scan.'} | ConvertTo-Json -Compress
     }
+    if ($InspectOnly) { break }
     Start-Sleep -Seconds 2
 }
