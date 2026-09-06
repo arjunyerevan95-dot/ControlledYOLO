@@ -12,7 +12,7 @@ import sqlite3
 import time
 import uuid
 
-VERSION = "2.0.5"
+VERSION = "2.0.6"
 VISIBLE_TTL = 8
 SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}\Z")
 LOCAL_TOOLS = {"Bash", "apply_patch"}

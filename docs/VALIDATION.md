@@ -1,5 +1,11 @@
 # Validation and host status
 
+## 2.0.6 scrolled transcript correction
+
+During live 2.0.5 acceptance, two Worker 2 cards were automatically invoked and Codex recorded approval at 2026-09-06 11:18:50 and 11:19:00 UTC. Old visible reminders became Not currently visible and stopped contributing to attention. All 46 Windows tests and Windows CI passed for 2.0.5.
+
+A third card reproduced another real condition: its sticky Allow once button and command remained onscreen, while the exact matching Running row was below the viewport and marked IsOffscreen. Version 2.0.6 allows that corroborating row to be offscreen, still requiring one exact complete match in the card's own chat scope and a visible enabled card, verified header, and fresh selected-chat policy. The monitor remains non-focusing. Regression fixtures now include 16 layouts, covering this captured case, an unrelated offscreen label, and ambiguous duplicate labels. Live installation results follow below.
+
 ## 2.0.5 quoted calls and reminder lifetime
 
 The previous build rejected PowerShell call-operator commands with quoted executable paths, including the Python invocations in the reported worker cards. It also retained visible-card reminders after manual approval or loss of visibility. The utility was paused immediately to stop the repeated sound during repair.

@@ -59,8 +59,11 @@ function Get-TerminalCommand($window, $button) {
     $condition = New-Object System.Windows.Automation.PropertyCondition($ae::NameProperty, (Get-RunningLabel $command))
     $cardScope = $walker.GetParent($button)
     if (-not $cardScope) { return '' }
+    # A sticky approval stays visible when its matching transcript row scrolls
+    # outside the viewport. Correlate the full label in this same chat scope;
+    # only the approval card itself must be onscreen. Ambiguity still rejects.
     $running = @($cardScope.FindAll($scope::Descendants, $condition) | Where-Object {
-        $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and -not $_.Current.IsOffscreen
+        $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button
     })
     if ($running.Count -ne 1) { return '' }
     return $command

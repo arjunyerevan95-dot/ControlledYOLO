@@ -34,7 +34,10 @@ $cases = @(
     @{name='preserve repeated whitespace in original'; command=('python -c "print(''two  spaces'')"' + [Environment]::NewLine + 'git status'); expected=$true},
     @{name='truncated running label'; command=$scriptCommand; truncated=$true; expected=$false},
     @{name='quoted executable call'; command="& 'C:\Tools\python.exe' 'Board_Work/download_images.py' review_images.json"; expected=$true},
-    @{name='running label outside card scope'; command=$scriptCommand; detached=$true; expected=$false}
+    @{name='running label outside card scope'; command=$scriptCommand; detached=$true; expected=$false},
+    @{name='matching transcript row scrolled offscreen'; command="& 'C:\Tools\python.exe' 'Board_Work/download_images.py' review_images3.json"; hiddenRunning=$true; expected=$true},
+    @{name='different offscreen running label'; command=$scriptCommand; hiddenRunning=$true; mismatch=$true; expected=$false},
+    @{name='ambiguous matching running labels'; command=$scriptCommand; duplicateRunning=$true; expected=$false}
 )
 foreach ($case in $cases) {
     $text=New-Node $case.command $textType
@@ -55,7 +58,9 @@ foreach ($case in $cases) {
     if ($case.mismatch) { $label='Running another command' }
     if ($case.truncated) { $label=$label.Substring(0,30) }
     $running=New-Node $label $buttonType
-    $window=[pscustomobject]@{running=$running}
+    $running.Current.IsOffscreen=[bool]$case.hiddenRunning
+    $window=[pscustomobject]@{running=@($running)}
+    if ($case.duplicateRunning) { $window.running+=New-Node $label $buttonType }
     $window | Add-Member ScriptMethod FindAll {
         param($treeScope,$condition)
         return @($this.running | Where-Object { $_.Current.Name -ceq $condition.Value })
@@ -69,7 +74,7 @@ foreach ($case in $cases) {
     $expected=if($case.expected){$case.command}else{''}
     if ($actual -cne $expected) { throw ('Layout regression: ' + $case.name) }
 }
-Write-Output '13 layout cases passed'
+Write-Output '16 layout cases passed'
 
 function New-HeaderParent($nodes) {
     $parent=[pscustomobject]@{nodes=$nodes}

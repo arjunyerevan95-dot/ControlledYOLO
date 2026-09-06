@@ -6,7 +6,7 @@ This is a successor to the working PowerShell utility. The original download rem
 
 ## Install
 
-Download `downloads/ControlledYOLO-2.0.5.zip`, extract it, and run `Install.cmd`. The adjacent `.sha256` file contains its checksum. The copy-paste bootstrap is in `docs/BOOTSTRAP.txt`.
+Download `downloads/ControlledYOLO-2.0.6.zip`, extract it, and run `Install.cmd`. The adjacent `.sha256` file contains its checksum. The copy-paste bootstrap is in `docs/BOOTSTRAP.txt`.
 
 The installer uses your existing Python 3.10+ with tkinter. If it cannot find one, it installs Python 3.12 for your Windows user with winget. No administrator account is required. A Windows CI build also produces a package with a bundled executable that does not require Python.
 
@@ -42,6 +42,8 @@ Version 2.0.3 also recognizes directly submitted PowerShell variable-assignment 
 Version 2.0.4 fixes multiline accessibility labels: the complete Running label is compared after whitespace flattening, because Codex replaces command line breaks with spaces there. The original command is retained unchanged for hashing and the final UI recheck. Truncated or different labels still fail. Run VisibleMonitor.ps1 with ConfigPath and InspectOnly to perform one non-invoking diagnostic scan.
 
 Version 2.0.5 supports literal quoted executable paths with PowerShell's call operator, including the bundled Python runtime. Dynamic program expressions remain unsupported. Chat identity requires actual conversation-header controls; a sidebar row or pet badge is insufficient. The Running label must be in the card's own parent scope. Floating preview cards without that association remain manual. These checks also work with a collapsed sidebar.
+
+Version 2.0.6 also handles sticky cards whose matching Running transcript row has scrolled outside the viewport. The card must remain visible and the full label must still uniquely match in the same chat scope. Unrelated, missing, truncated, or ambiguous labels do not authorize approval.
 
 ## Phone alerts
 

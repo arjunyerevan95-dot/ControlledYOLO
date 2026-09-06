@@ -107,7 +107,7 @@ class VisibleApprovalTests(unittest.TestCase):
                                  str(root / "tests/visible_layout.ps1"), str(root / "app/VisibleMonitor.ps1")],
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("13 layout cases passed", result.stdout)
+        self.assertIn("16 layout cases passed", result.stdout)
         self.assertIn("6 header cases passed", result.stdout)
 
     def test_quoted_executable_calls_and_literal_paths(self):
