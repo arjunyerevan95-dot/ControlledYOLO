@@ -6,6 +6,10 @@ Live inspection of a waiting multiline git command showed that the card text con
 
 Regression coverage now uses the observed accessibility behavior rather than an idealized label, including multiline git scripts, repeated whitespace preserved in the original, truncated labels, and all earlier card layouts. InspectOnly offers a single non-invoking scan of actual exposed cards. Live installation/acceptance results are recorded below when verified.
 
+Live acceptance succeeded: the non-invoking scan recognized the actual waiting multiline card and marked it eligible under the selected worker's current policy. After installing 2.0.4, the monitor automatically invoked its approval; Codex recorded ExecApproval/Approved at 2026-09-06 09:22:18 UTC. The worker continued and subsequently posted its report. The matching UI approval is recorded in ControlledYOLO, and the obsolete reminder from the old matcher was acknowledged after confirmation. No pending attention remained at the final check. All three UE5 workers stayed selected and the tray remained unpaused with a fresh heartbeat.
+
+All 40 tests passed on the PC, including 11 production PowerShell layout cases. Windows CI and standalone packaging also passed: https://github.com/arjunyerevan95-dot/ControlledYOLO/actions/runs/34024405092 . Native hook delivery, hidden-chat coverage, and foreground retention have not been newly verified by this test.
+
 ## 2.0.3 matching correction
 
 The next reported terminal card exposed two matcher gaps: its script began with a PowerShell variable assignment, and its collapsed layout inserted Expand between the command text and Deny while omitting the approval dropdown. Version 2.0.3 recognizes those PowerShell forms and accepts both collapsed and expanded terminal layouts, without relaxing selected-chat, pause, expiry, heartbeat, or exact running-command checks.
