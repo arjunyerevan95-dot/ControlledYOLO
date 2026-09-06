@@ -8,7 +8,7 @@ import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
-from core import Store, index_titles, terminal_command
+from core import Store, index_titles, terminal_command, VISIBLE_TTL
 
 
 class VisibleApprovalTests(unittest.TestCase):
@@ -107,7 +107,78 @@ class VisibleApprovalTests(unittest.TestCase):
                                  str(root / "tests/visible_layout.ps1"), str(root / "app/VisibleMonitor.ps1")],
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("11 layout cases passed", result.stdout)
+        self.assertIn("13 layout cases passed", result.stdout)
+        self.assertIn("6 header cases passed", result.stdout)
+
+    def test_quoted_executable_calls_and_literal_paths(self):
+        for command in [
+            r"& 'C:\Users\arjun\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' 'Board_Work/WO-HN-FURNITURE-DISCOVERY-011/download_images.py' review_images.json",
+            r'& "C:\Program Files\Python 3.14\python.exe" script.py',
+            r"&'C:\Tools\python3.14.exe' script.py",
+            r"& pwsh.exe -Command Get-Date",
+            r"C:\Tools\git.exe status",
+        ]:
+            with self.subTest(command=command):
+                self.assertTrue(terminal_command(command))
+                self.card.update(command=command, running_command="Running " + command)
+                self.assertTrue(self.allowed())
+        for command in [r"& $env:TOOLS\python.exe script.py", r'& "$env:TOOLS\python.exe" script.py',
+                        r"& 'C:\Tools\unrecognized.exe' arg", r"&& python.exe script.py",
+                        r"'C:\Tools\python.exe' script.py", r"& 'C:\Tools\python.exe'INJECT"]:
+            with self.subTest(command=command):
+                self.assertFalse(terminal_command(command))
+
+    def test_quoted_calls_still_obey_mode_pause_and_selection(self):
+        command = r"& 'C:\Tools\python.exe' script.py"
+        self.card.update(command=command, running_command="Running " + command)
+        for selected, mode in [(False, "auto_local"), (True, "notify")]:
+            self.store.configure_chat("one", selected, mode)
+            self.assertFalse(self.allowed())
+        self.store.configure_chat("one", True, "auto_local")
+        self.store.set("paused", True)
+        self.assertFalse(self.allowed())
+
+    def test_manual_dismissal_quiets_old_card_but_not_new_request(self):
+        self.store.visible_snapshot([self.card])
+        original = self.store.attention()[0]["id"]
+        self.store.visible_snapshot([])
+        self.assertEqual(self.store.attention(), [])
+        self.assertEqual(self.store.requests()[0]["status"], "not_observed")
+        self.store.visible_snapshot([dict(self.card, key="new-card")])
+        self.assertEqual(len(self.store.attention()), 1)
+        self.assertNotEqual(self.store.attention()[0]["id"], original)
+
+    def test_monitor_failure_expires_visible_sound_without_fake_approval(self):
+        self.store.visible_snapshot([self.card])
+        self.now += VISIBLE_TTL
+        self.assertEqual(self.store.attention(), [])
+        self.assertEqual(self.store.requests()[0]["status"], "pending")
+        self.store.visible_snapshot([self.card])
+        self.assertEqual(len(self.store.attention()), 1)
+
+    def test_brief_rescan_does_not_duplicate_or_lose_acknowledgment(self):
+        self.store.visible_snapshot([self.card])
+        original = self.store.attention()[0]["id"]
+        self.store.acknowledge([original])
+        self.store.visible_snapshot([])
+        self.now += 2
+        self.store.visible_snapshot([self.card])
+        self.assertEqual(self.store.attention(), [])
+        self.assertEqual(len(self.store.requests()), 1)
+        self.store.visible_snapshot([])
+        self.now += VISIBLE_TTL + 1
+        self.store.visible_snapshot([self.card])
+        self.assertEqual(len(self.store.attention()), 1)
+        self.assertNotEqual(self.store.attention()[0]["id"], original)
+
+    def test_visible_disappearance_does_not_clear_native_reminders(self):
+        self.store.configure_chat("one", True, "notify")
+        self.store.handle_hook({"session_id": "one", "hook_event_name": "PermissionRequest",
+                               "turn_id": "turn", "tool_name": "Bash", "tool_input": {"command": "python script.py"}})
+        self.now += VISIBLE_TTL + 1
+        self.store.visible_snapshot([])
+        self.assertEqual(len(self.store.attention()), 1)
+        self.assertEqual(self.store.attention()[0]["source"], "hook")
 
     def test_approval_clears_only_exact_card_and_new_command_is_distinct(self):
         other = dict(self.card, key="button:different-command-hash")

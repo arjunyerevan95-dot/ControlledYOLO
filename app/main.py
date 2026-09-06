@@ -15,7 +15,7 @@ import time
 import traceback
 import uuid
 
-from core import Store, VERSION, index_titles
+from core import Store, VERSION, VISIBLE_TTL, index_titles
 
 
 def codex_home():
@@ -206,18 +206,18 @@ class App:
         self.expiry = self.ttk.Combobox(controls, state="readonly", width=15, values=["Until I stop it", "30 minutes", "1 hour", "2 hours", "8 hours"])
         self.expiry.current(0)
         self.expiry.pack(side="left")
-        self.ttk.Label(self.chats_page, text="Select one or several rows, then choose a mode. Double-click a row to toggle watching.\nAuto local uses native hooks where available and can approve recognized terminal cards in open chat windows without changing focus.", wraplength=970).pack(anchor="w", pady=(14, 0))
+        self.ttk.Label(self.chats_page, text="Select one or several rows, then choose a mode. Double-click a row to toggle watching.\nAuto local uses native hooks where available and can approve recognized terminal cards in open chat windows without issuing focus commands.", wraplength=970).pack(anchor="w", pady=(14, 0))
         self.selection_notice = self.tk.StringVar(value=self.store.get("selection_notice", ""))
         self.ttk.Label(self.chats_page, textvariable=self.selection_notice, foreground="#875c13", wraplength=960).pack(anchor="w", pady=(8, 0))
 
     def build_attention(self):
-        self.ttk.Label(self.attention_page, text="Reminders continue until you acknowledge them or a matching native event clears them.").pack(anchor="w")
+        self.ttk.Label(self.attention_page, text="Visible-card reminders stop when the card disappears. Native reminders use matching completion events.").pack(anchor="w")
         self.request_tree = self.tree(self.attention_page, ["Chat", "Request", "Source", "State", "Since"], [300, 220, 95, 170, 85])
         controls = self.ttk.Frame(self.attention_page)
         controls.pack(fill="x")
         self.ttk.Button(controls, text="Acknowledge selected", command=self.acknowledge).pack(side="left")
         self.ttk.Button(controls, text="Acknowledge all", command=self.acknowledge_all).pack(side="left", padx=8)
-        self.ttk.Label(self.attention_page, text="Acknowledging silences reminders; it does not approve a request. Visible-card alerts stay listed when a window is hidden.\n“Hook allowed” records a hook decision. It does not claim Codex executed the action.", wraplength=950).pack(anchor="w", pady=(14, 0))
+        self.ttk.Label(self.attention_page, text="Acknowledging silences reminders; it does not approve a request. Hidden or dismissed cards stay in history as not currently visible.\nThat status does not claim approval or completion. Visible reminders also expire if the monitor stops reporting.", wraplength=950).pack(anchor="w", pady=(14, 0))
 
     def build_settings(self):
         page = self.settings_page
@@ -451,6 +451,8 @@ class App:
         self.request_tree.delete(*self.request_tree.get_children())
         for row in rows:
             status = {"pending": "Acknowledged" if row["acknowledged"] else "Needs attention", "allowed_by_hook": "Hook allowed", "allowed_by_ui": "UI approval sent", "tool_finished": "Tool finished", "ended": "Turn/session ended", "interrupted": "Interrupted"}.get(row["status"], row["status"])
+            if row["status"] == "not_observed" or (row["source"] == "visible" and row["status"] == "pending" and not 0 <= time.time() - row["updated"] < VISIBLE_TTL):
+                status = "Not currently visible"
             if row["push_error"] and row["status"] == "pending" and not row["acknowledged"]:
                 status += " · push retry"
             self.request_tree.insert("", "end", iid=row["id"], values=(row["title"], row["tool"], "Native" if row["source"] == "hook" else "Visible UI", status, time.strftime("%H:%M:%S", time.localtime(row["created"]))))

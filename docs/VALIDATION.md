@@ -1,5 +1,15 @@
 # Validation and host status
 
+## 2.0.5 quoted calls and reminder lifetime
+
+The previous build rejected PowerShell call-operator commands with quoted executable paths, including the Python invocations in the reported worker cards. It also retained visible-card reminders after manual approval or loss of visibility. The utility was paused immediately to stop the repeated sound during repair.
+
+Version 2.0.5 parses literal quoted/unquoted program paths and the optional PowerShell call operator for the recognized terminal executable family. It does not evaluate dynamic executable expressions. The same selection, mode, pause, expiry, and heartbeat restrictions apply. Real conversation-header controls replace the sidebar-position heuristic. The matching Running label must belong to the card's own parent scope, not merely another part of the window. Unidentified floating/preview cards are not assigned to a chat using a pet badge.
+
+Visible reminders now reflect a live observation. A missing card becomes Not currently visible on the next clean scan, without claiming approval or completion. If the monitor fails to report, an eight-second observation lease silences old visible reminders. Brief rescans reuse the same reminder; a new card can alert again. Native reminders still require their normal events or acknowledgment. History is retained. This intentionally means hidden chats do not keep sounding through the UI fallback.
+
+Regression coverage includes quoted paths and rejected dynamic/unrecognized programs, selected/notify/paused policy, manual dismissal followed by a new request, lost monitor output, brief rescans, native-reminder isolation, 13 layout cases, and six header-identity cases. Live acceptance results follow after installation.
+
 ## 2.0.4 multiline label correction
 
 Live inspection of a waiting multiline git command showed that the card text contained newlines while the Running accessibility name replaced those newlines with spaces. The previous exact comparison therefore rejected the same script. Version 2.0.4 compares the complete whitespace-flattened accessibility label, while preserving the original command for hashing and the final pre-approval UI check. It does not accept shortened or different commands. Selection, pause, expiry, duplicate-title, and heartbeat policy are unchanged.

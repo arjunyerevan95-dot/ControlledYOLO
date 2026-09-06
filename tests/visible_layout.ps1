@@ -10,12 +10,13 @@ function New-Node($name, $type) {
             Name=$name; ControlType=$type; IsOffscreen=$false
             BoundingRectangle=[pscustomobject]@{Top=100;Bottom=120}
         }
-        previous=$null; next=$null
+        previous=$null; next=$null; parent=$null
     }
 }
 $walker = New-Object PSObject
 $walker | Add-Member ScriptMethod GetPreviousSibling { param($node) return $node.previous }
 $walker | Add-Member ScriptMethod GetNextSibling { param($node) return $node.next }
+$walker | Add-Member ScriptMethod GetParent { param($node) return $node.parent }
 $buttonType=[System.Windows.Automation.ControlType]::Button
 $textType=[System.Windows.Automation.ControlType]::Text
 $groupType=[System.Windows.Automation.ControlType]::Group
@@ -31,7 +32,9 @@ $cases = @(
     @{name='offscreen command'; command=$scriptCommand; hidden=$true; expected=$false},
     @{name='multiline git push'; command=('git -C example push origin worker/test' + [Environment]::NewLine + 'if ($LASTEXITCODE -ne 0) { throw ''Push failed'' }' + [Environment]::NewLine + 'git -C example ls-remote origin'); expected=$true},
     @{name='preserve repeated whitespace in original'; command=('python -c "print(''two  spaces'')"' + [Environment]::NewLine + 'git status'); expected=$true},
-    @{name='truncated running label'; command=$scriptCommand; truncated=$true; expected=$false}
+    @{name='truncated running label'; command=$scriptCommand; truncated=$true; expected=$false},
+    @{name='quoted executable call'; command="& 'C:\Tools\python.exe' 'Board_Work/download_images.py' review_images.json"; expected=$true},
+    @{name='running label outside card scope'; command=$scriptCommand; detached=$true; expected=$false}
 )
 foreach ($case in $cases) {
     $text=New-Node $case.command $textType
@@ -57,8 +60,46 @@ foreach ($case in $cases) {
         param($treeScope,$condition)
         return @($this.running | Where-Object { $_.Current.Name -ceq $condition.Value })
     }
+    $button.parent=$window
+    if ($case.detached) {
+        $button.parent=New-Object PSObject
+        $button.parent | Add-Member ScriptMethod FindAll { param($treeScope,$condition) return @() }
+    }
     $actual=Get-TerminalCommand $window $button
     $expected=if($case.expected){$case.command}else{''}
     if ($actual -cne $expected) { throw ('Layout regression: ' + $case.name) }
 }
-Write-Output '11 layout cases passed'
+Write-Output '13 layout cases passed'
+
+function New-HeaderParent($nodes) {
+    $parent=[pscustomobject]@{nodes=$nodes}
+    $parent | Add-Member ScriptMethod FindAll { param($treeScope,$condition) return @($this.nodes) }
+    return $parent
+}
+function New-TestHeader($name,$left,$valid) {
+    $node=New-Node $name $buttonType
+    $node.Current.BoundingRectangle=[pscustomobject]@{Top=45;Bottom=70;Left=$left}
+    $siblings=@($node)
+    if($valid){$siblings+=New-Node 'Chat actions' $buttonType; $siblings+=New-Node 'Share' $buttonType}
+    $node.parent=New-HeaderParent $siblings
+    return $node
+}
+$chats=@([pscustomobject]@{id='one';title='Worker 1'},[pscustomobject]@{id='two';title='Worker 2'})
+$cases=@(
+    @{nodes=@((New-TestHeader 'Worker 1' 30 $true)); expected='one'},
+    @{nodes=@((New-TestHeader 'Worker 1' 294 $true),(New-TestHeader 'Worker 1' 7 $false)); expected='one'},
+    @{nodes=@((New-TestHeader 'Worker 1' 7 $false)); expected=''},
+    @{nodes=@((New-TestHeader 'Worker 2' 950 $false)); expected=''},
+    @{nodes=@((New-TestHeader 'Worker 1' 30 $true),(New-TestHeader 'Worker 2' 200 $true)); expected=''},
+    @{nodes=@((New-TestHeader 'Unselected chat' 30 $true)); expected=''}
+)
+foreach($case in $cases){
+    $window=[pscustomobject]@{nodes=$case.nodes;Current=[pscustomobject]@{BoundingRectangle=[pscustomobject]@{Top=0}}}
+    $window | Add-Member ScriptMethod FindAll {
+        param($treeScope,$condition)
+        return @($this.nodes | Where-Object {$_.Current.Name -ceq $condition.Value})
+    }
+    $target=Get-Target $window $chats
+    if([string]$target.id -cne $case.expected){throw 'Header identity regression'}
+}
+Write-Output '6 header cases passed'

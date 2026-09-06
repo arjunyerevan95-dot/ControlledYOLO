@@ -152,11 +152,13 @@ class StateTests(unittest.TestCase):
         self.store.visible_snapshot([card])
         self.store.visible_snapshot([card])
         self.assertEqual(len(self.store.attention()), 1)
-        self.store.acknowledge([self.store.attention()[0]["id"]])
         self.store.visible_snapshot([])
+        self.assertEqual(self.store.attention(), [])
+        self.assertEqual(self.store.requests()[0]["status"], "not_observed")
+        self.now += 2
         self.store.visible_snapshot([card])
         self.assertEqual(len(self.store.attention()), 1)
-        self.assertEqual(len(self.store.requests()), 2)
+        self.assertEqual(len(self.store.requests()), 1)
 
     def test_index_is_labels_only_and_respects_existing_selection(self):
         path = Path(self.temp.name) / "index.jsonl"

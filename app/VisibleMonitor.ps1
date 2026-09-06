@@ -18,7 +18,7 @@ function Get-Target($window, $chats) {
         $condition = New-Object System.Windows.Automation.PropertyCondition($ae::NameProperty, $chat.title)
         foreach ($element in $window.FindAll($scope::Descendants, $condition)) {
             $r = $element.Current.BoundingRectangle
-            if (-not $element.Current.IsOffscreen -and $r.Left -ge ($bounds.Left + [Math]::Min(220,$bounds.Width*.18)) -and $r.Top -ge $bounds.Top -and $r.Top -le ($bounds.Top + [Math]::Max(160,$bounds.Height*.25))) {
+            if (-not $element.Current.IsOffscreen -and $element.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $r.Top -ge $bounds.Top -and $r.Top -le ($bounds.Top + 160) -and (Test-ChatHeader $element)) {
                 $matches += $chat
                 break
             }
@@ -26,6 +26,15 @@ function Get-Target($window, $chats) {
     }
     if ($matches.Count -eq 1) { return $matches[0] }
     return $null
+}
+
+function Test-ChatHeader($element) {
+    $parent = $walker.GetParent($element)
+    if (-not $parent) { return $false }
+    $siblings = @($parent.FindAll($scope::Children, $buttonCondition) | Where-Object { -not $_.Current.IsOffscreen })
+    # A sidebar row/pet badge lacks these actual conversation-header controls.
+    return (@($siblings | Where-Object {$_.Current.Name -ceq 'Chat actions'}).Count -eq 1 -and
+            @($siblings | Where-Object {$_.Current.Name -ceq 'Share'}).Count -eq 1)
 }
 
 function Get-RunningLabel([string]$command) {
@@ -48,7 +57,9 @@ function Get-TerminalCommand($window, $button) {
     $b = $button.Current.BoundingRectangle
     if ($r.Top -gt $b.Top -or ($b.Top - $r.Bottom) -gt 260) { return '' }
     $condition = New-Object System.Windows.Automation.PropertyCondition($ae::NameProperty, (Get-RunningLabel $command))
-    $running = @($window.FindAll($scope::Descendants, $condition) | Where-Object {
+    $cardScope = $walker.GetParent($button)
+    if (-not $cardScope) { return '' }
+    $running = @($cardScope.FindAll($scope::Descendants, $condition) | Where-Object {
         $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and -not $_.Current.IsOffscreen
     })
     if ($running.Count -ne 1) { return '' }

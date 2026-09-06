@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import ntpath
 import os
 from pathlib import Path
 import re
@@ -11,7 +12,8 @@ import sqlite3
 import time
 import uuid
 
-VERSION = "2.0.4"
+VERSION = "2.0.5"
+VISIBLE_TTL = 8
 SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}\Z")
 LOCAL_TOOLS = {"Bash", "apply_patch"}
 EVENTS = {"SessionStart", "SessionEnd", "PermissionRequest", "PostToolUse", "Stop", "Interrupt"}
@@ -57,7 +59,17 @@ def terminal_command(command):
         if not newline:
             return False
         start = start.lstrip()
-    executable = r"(?:python(?:3)?|py|pwsh|powershell|cmd|git|gh)(?:\.exe)?(?:\s|$)"
+    executable_name = r"(?:python(?:\d+(?:\.\d+)*)?|pythonw|py|pwsh|powershell|cmd|git|gh)(?:\.exe)?"
+    executable = executable_name + r"(?:\s|$)"
+    # Parse a literal program token, including PowerShell's call operator.
+    # Do not evaluate variables, subexpressions, or shell syntax here.
+    invocation = start[1:].lstrip() if start.startswith("&") and not start.startswith("&&") else start
+    token = re.match(r"""^(?:'([^']+)'|"([^"$\x60]+)"|([^\s'"&|;<>]+))(?=\s|$)""", invocation)
+    if token:
+        program = next(value for value in token.groups() if value is not None)
+        if not any(c in program for c in "$\x60()") and re.fullmatch(executable_name, ntpath.basename(program), re.I):
+            if not invocation.startswith(("'", '"')) or start.startswith("&"):
+                return True
     assignment = r"\$(?:(?:global|script|local|private|env):)?[A-Za-z_][\w]*\s*=(?!=)\s*\S"
     cmdlet = r"(?:Get|Set|New|Remove|Start|Stop|Test|Write|Read|Invoke|Join|Split|Copy|Move|Select|Where|ForEach|Wait|Out|Import|Export|Resolve|ConvertTo|ConvertFrom)-[A-Za-z][\w]*(?:\s|$)"
     return bool(re.match(r"^(?:" + executable + "|" + assignment + "|" + cmdlet + ")", start, re.I))
@@ -235,7 +247,8 @@ class Store:
     def attention(self):
         now = self.clock()
         return [r for r in self.requests(True) if r["selected"] and not r["acknowledged"]
-                and (r["expires"] is None or r["expires"] > now)]
+                and (r["expires"] is None or r["expires"] > now)
+                and (r["source"] != "visible" or 0 <= now - r["updated"] < VISIBLE_TTL)]
 
     def update_push(self, request_id, success, error=""):
         with self.db() as db:
@@ -252,7 +265,8 @@ class Store:
             by_title.setdefault(clean_label(chat["title"]).casefold(), []).append(chat)
         seen = {}
         with self.db() as db:
-            previous = self._get(db, "visible_current", {})
+            age = now - self._get(db, "visible_observed_at", 0)
+            previous = self._get(db, "visible_current", {}) if 0 <= age < VISIBLE_TTL else {}
             for card in cards:
                 matches = by_title.get(clean_label(card.get("title")).casefold(), [])
                 if len(matches) != 1 or not self._active(db, matches[0]["id"], now):
@@ -262,15 +276,22 @@ class Store:
                 if db.execute("SELECT 1 FROM requests WHERE session_id=? AND source='hook' AND status='pending'", (session,)).fetchone():
                     continue
                 identity = hashlib.sha256((session + ":" + str(card.get("key", ""))).encode()).hexdigest()
-                key = previous.get(identity) or "visible:" + uuid.uuid4().hex
+                recent = db.execute("SELECT id FROM requests WHERE source='visible' AND fingerprint=? AND status IN ('pending','not_observed') AND updated>? ORDER BY created DESC LIMIT 1",
+                                    (identity, now - VISIBLE_TTL)).fetchone()
+                key = previous.get(identity) or (recent[0] if recent else "visible:" + uuid.uuid4().hex)
                 seen[identity] = key
                 row = db.execute("SELECT status FROM requests WHERE id=?", (key,)).fetchone()
-                if row and row[0] == "pending":
-                    db.execute("UPDATE requests SET updated=? WHERE id=?", (now, key))
+                if row and row[0] in {"pending", "not_observed"}:
+                    db.execute("UPDATE requests SET status='pending',updated=? WHERE id=?", (now, key))
                 elif not row:
                     db.execute("INSERT OR REPLACE INTO requests(id,session_id,turn_id,tool,fingerprint,source,status,created,updated) VALUES (?,?,?,?,?,?,?,?,?)",
-                               (key, session, "", "Visible permission card", "", "visible", "pending", now, now))
-            # A hidden card is not proof of resolution: keep its reminder until acknowledgment.
+                               (key, session, "", "Visible permission card", identity, "visible", "pending", now, now))
+            # Absence ends an observation, not a permission. Quiet its reminder
+            # without asserting that the user approved or the command completed.
+            current_ids = set(seen.values())
+            for row in db.execute("SELECT id FROM requests WHERE source='visible' AND status='pending'").fetchall():
+                if row["id"] not in current_ids:
+                    db.execute("UPDATE requests SET status='not_observed' WHERE id=?", (row["id"],))
             self._set(db, "visible_observed_at", now)
             self._set(db, "visible_count", len(seen))
             self._set(db, "visible_current", seen)

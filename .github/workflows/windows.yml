@@ -34,7 +34,7 @@ jobs:
         run: python scripts/package.py --exe dist/ControlledYOLO/ControlledYOLO.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: ControlledYOLO-2.0.4-windows
+          name: ControlledYOLO-2.0.5-windows
           path: |
-            dist/ControlledYOLO-2.0.4-windows.zip
-            dist/ControlledYOLO-2.0.4-windows.sha256
+            dist/ControlledYOLO-2.0.5-windows.zip
+            dist/ControlledYOLO-2.0.5-windows.sha256
