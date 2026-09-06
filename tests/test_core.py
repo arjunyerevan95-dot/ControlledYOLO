@@ -264,7 +264,7 @@ class WindowsTests(unittest.TestCase):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".ps1", delete=False) as script:
             script.write(code)
         try:
-            result = subprocess.run(["powershell.exe", "-NoProfile", "-File", script.name, str(root)], capture_output=True, text=True)
+            result = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script.name, str(root)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         finally:
             Path(script.name).unlink()

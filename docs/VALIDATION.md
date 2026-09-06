@@ -1,5 +1,13 @@
 # Validation and host status
 
+## 2.0.3 matching correction
+
+The next reported terminal card exposed two matcher gaps: its script began with a PowerShell variable assignment, and its collapsed layout inserted Expand between the command text and Deny while omitting the approval dropdown. Version 2.0.3 recognizes those PowerShell forms and accepts both collapsed and expanded terminal layouts, without relaxing selected-chat, pause, expiry, heartbeat, or exact running-command checks.
+
+Regression coverage includes the production PowerShell recognition function against eight layouts: ordinary cards with/without dropdowns, collapsed/expanded scripts, unrelated intervening controls, mismatched running commands, missing Deny, and offscreen command text. Python checks cover direct PowerShell forms and their selected/paused/notify-only policy. The script-syntax test now uses the same process-only execution-policy argument as the app launcher; it does not alter a machine policy.
+
+At patch time the reported card was no longer exposed. Codex logs record a subsequent approval and Unreal has restarted. That earlier approval must not be attributed to this update. A new live instance of the collapsed PowerShell card is still needed for end-to-end acceptance; regression checks reproduce the captured layout without approving any real request.
+
 ## 2.0.2
 
 The tray and repeated chime are working on the user’s Windows PC, with three UE5 worker chats selected. The six ControlledYOLO hooks were reviewed and trusted through the normal Codex interface. Unrelated hook entries were preserved.

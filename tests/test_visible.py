@@ -8,7 +8,7 @@ import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
-from core import Store, index_titles
+from core import Store, index_titles, terminal_command
 
 
 class VisibleApprovalTests(unittest.TestCase):
@@ -68,6 +68,37 @@ class VisibleApprovalTests(unittest.TestCase):
         self.card.update(command="gh api some/path", running_command="Running python other.py")
         self.assertFalse(self.allowed())
 
+    def test_powershell_script_assignment_uses_same_selected_chat_policy(self):
+        command = "$priorEditor = Get-Process -Id 21852 -ErrorAction SilentlyContinue\nif ($priorEditor) { $priorEditor.WaitForExit(30000) }"
+        self.card.update(command=command, running_command="Running " + command)
+        self.assertTrue(self.allowed())
+        self.store.configure_chat("one", False, "auto_local")
+        self.assertFalse(self.allowed())
+        self.store.configure_chat("one", True, "notify")
+        self.assertFalse(self.allowed())
+        self.store.configure_chat("one", True, "auto_local")
+        self.store.set("paused", True)
+        self.assertFalse(self.allowed())
+
+    def test_powershell_command_forms_and_invalid_lookalikes(self):
+        for command in ["$priorEditor = Get-Process -Id 21852", " \n# Save/restart check\n$editor = $null",
+                        "$env:EXAMPLE = 'test'", "Get-Process -Name UnrealEditor", "Start-Process example.exe"]:
+            with self.subTest(command=command):
+                self.assertTrue(terminal_command(command))
+        for command in ["$priorEditor", "$priorEditor == something", "$priorEditor = ", "# comment only",
+                        "Get permission", "Get-", "mcp__tool request", "Approve"]:
+            with self.subTest(command=command):
+                self.assertFalse(terminal_command(command))
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell layout regression")
+    def test_real_powershell_layout_function(self):
+        root = Path(__file__).resolve().parents[1]
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                                 str(root / "tests/visible_layout.ps1"), str(root / "app/VisibleMonitor.ps1")],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("8 layout cases passed", result.stdout)
+
     def test_approval_clears_only_exact_card_and_new_command_is_distinct(self):
         other = dict(self.card, key="button:different-command-hash")
         self.store.visible_snapshot([self.card, other])
@@ -102,6 +133,10 @@ class VisibleApprovalTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             return json.loads(result.stdout)["allow"]
         self.assertTrue(invoke(json.dumps(self.card).encode()))
+        command = "$priorEditor = Get-Process -Id 21852\nif ($priorEditor) { $priorEditor.WaitForExit(30000) }"
+        script_card = dict(self.card, command=command, running_command="Running " + command)
+        self.assertTrue(invoke(json.dumps(script_card).encode()))
         self.store.set("paused", True)
         self.assertFalse(invoke(json.dumps(self.card).encode()))
+        self.assertFalse(invoke(json.dumps(script_card).encode()))
         self.assertFalse(invoke(b"malformed"))

@@ -11,7 +11,7 @@ import sqlite3
 import time
 import uuid
 
-VERSION = "2.0.2"
+VERSION = "2.0.3"
 SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}\Z")
 LOCAL_TOOLS = {"Bash", "apply_patch"}
 EVENTS = {"SessionStart", "SessionEnd", "PermissionRequest", "PostToolUse", "Stop", "Interrupt"}
@@ -47,8 +47,20 @@ def index_titles(path):
 
 def terminal_command(command):
     # Recognition, not a command safety classifier. Auto local is user opt-in.
-    return isinstance(command, str) and 0 < len(command) <= 32768 and "\x00" not in command and bool(
-        re.match(r"^(?:python(?:3)?|py|pwsh|powershell|cmd|git|gh)(?:\.exe)?(?:\s|$)", command, re.I))
+    if not isinstance(command, str) or not 0 < len(command) <= 32768 or "\x00" in command:
+        return False
+    start = command.lstrip()
+    # A terminal tool can execute PowerShell directly: no powershell.exe prefix.
+    # Skip leading line comments, but preserve the original command for correlation.
+    while start.startswith("#"):
+        _, newline, start = start.partition("\n")
+        if not newline:
+            return False
+        start = start.lstrip()
+    executable = r"(?:python(?:3)?|py|pwsh|powershell|cmd|git|gh)(?:\.exe)?(?:\s|$)"
+    assignment = r"\$(?:(?:global|script|local|private|env):)?[A-Za-z_][\w]*\s*=(?!=)\s*\S"
+    cmdlet = r"(?:Get|Set|New|Remove|Start|Stop|Test|Write|Read|Invoke|Join|Split|Copy|Move|Select|Where|ForEach|Wait|Out|Import|Export|Resolve|ConvertTo|ConvertFrom)-[A-Za-z][\w]*(?:\s|$)"
+    return bool(re.match(r"^(?:" + executable + "|" + assignment + "|" + cmdlet + ")", start, re.I))
 
 
 class Store:

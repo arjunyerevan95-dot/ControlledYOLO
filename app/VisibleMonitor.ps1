@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$ConfigPath)
+param([string]$ConfigPath, [switch]$FunctionsOnly)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName UIAutomationClient
@@ -29,12 +29,14 @@ function Get-Target($window, $chats) {
 }
 
 function Get-TerminalCommand($window, $button) {
-    # Require the current card's exact sibling layout and matching running command.
+    # The dropdown is optional; collapsed long scripts add an Expand control.
     if ($button.Current.Name -cne 'Allow once') { return '' }
     $before = $walker.GetPreviousSibling($button)
-    $after = $walker.GetNextSibling($button)
-    if (-not $before -or $before.Current.Name -cne 'Deny' -or -not $after -or $after.Current.Name -cne 'Approval options') { return '' }
+    if (-not $before -or $before.Current.Name -cne 'Deny' -or $before.Current.ControlType -ne [System.Windows.Automation.ControlType]::Button -or $before.Current.IsOffscreen) { return '' }
     $text = $walker.GetPreviousSibling($before)
+    if ($text -and $text.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $text.Current.Name -cin @('Expand','Collapse')) {
+        $text = $walker.GetPreviousSibling($text)
+    }
     if (-not $text -or $text.Current.ControlType -ne [System.Windows.Automation.ControlType]::Text -or $text.Current.IsOffscreen) { return '' }
     $command = $text.Current.Name
     if (-not $command -or $command.Length -gt 32768) { return '' }
@@ -76,6 +78,9 @@ function Test-FreshPolicy($config, $payload) {
         return (($child.StandardOutput.ReadToEnd() | ConvertFrom-Json).allow -eq $true)
     } catch { return $false } finally { $child.Dispose() }
 }
+
+if ($FunctionsOnly) { return }
+if (-not $ConfigPath) { throw 'ConfigPath is required to run the monitor.' }
 
 while ($true) {
     try {
