@@ -1,0 +1,359 @@
+"""Local state and the documented Codex hook contract. Standard library only."""
+from __future__ import annotations
+
+import contextlib
+import hashlib
+import json
+import ntpath
+import os
+from pathlib import Path
+import re
+import sqlite3
+import time
+import uuid
+
+VERSION = "2.0.6"
+VISIBLE_TTL = 8
+SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,159}\Z")
+LOCAL_TOOLS = {"Bash", "apply_patch"}
+EVENTS = {"SessionStart", "SessionEnd", "PermissionRequest", "PostToolUse", "Stop", "Interrupt"}
+DEFAULTS = {"paused": False, "chime_seconds": 10, "push_seconds": 120,
+            "ntfy_url": "", "ntfy_token": "", "visible_monitor": True}
+
+
+def state_home() -> Path:
+    override = os.environ.get("CONTROLLEDYOLO_HOME")
+    # MSIX-packaged Codex can virtualize LocalAppData. A profile-root folder is
+    # shared by packaged hook processes and ordinary Windows Startup processes.
+    return Path(override) if override else Path.home() / "ControlledYOLO/state"
+
+
+def clean_label(value, fallback="Chat"):
+    return " ".join(str(value or fallback).split())[:160]
+
+
+def index_titles(path):
+    """Read current names in the append-only index; incomplete input fails closed."""
+    path = Path(path)
+    if not path.is_file() or path.stat().st_size > 32_000_000:
+        return {}
+    titles = {}
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        row = json.loads(line)
+        session = row.get("id") or row.get("thread_id")
+        title = row.get("thread_name") or row.get("title")
+        if session and title and SESSION_ID.fullmatch(session):
+            titles[session] = clean_label(title)
+    return titles
+
+
+def terminal_command(command):
+    # Recognition, not a command safety classifier. Auto local is user opt-in.
+    if not isinstance(command, str) or not 0 < len(command) <= 32768 or "\x00" in command:
+        return False
+    start = command.lstrip()
+    # A terminal tool can execute PowerShell directly: no powershell.exe prefix.
+    # Skip leading line comments, but preserve the original command for correlation.
+    while start.startswith("#"):
+        _, newline, start = start.partition("\n")
+        if not newline:
+            return False
+        start = start.lstrip()
+    executable_name = r"(?:python(?:\d+(?:\.\d+)*)?|pythonw|py|pwsh|powershell|cmd|git|gh)(?:\.exe)?"
+    executable = executable_name + r"(?:\s|$)"
+    # Parse a literal program token, including PowerShell's call operator.
+    # Do not evaluate variables, subexpressions, or shell syntax here.
+    invocation = start[1:].lstrip() if start.startswith("&") and not start.startswith("&&") else start
+    token = re.match(r"""^(?:'([^']+)'|"([^"$\x60]+)"|([^\s'"&|;<>]+))(?=\s|$)""", invocation)
+    if token:
+        program = next(value for value in token.groups() if value is not None)
+        if not any(c in program for c in "$\x60()") and re.fullmatch(executable_name, ntpath.basename(program), re.I):
+            if not invocation.startswith(("'", '"')) or start.startswith("&"):
+                return True
+    assignment = r"\$(?:(?:global|script|local|private|env):)?[A-Za-z_][\w]*\s*=(?!=)\s*\S"
+    cmdlet = r"(?:Get|Set|New|Remove|Start|Stop|Test|Write|Read|Invoke|Join|Split|Copy|Move|Select|Where|ForEach|Wait|Out|Import|Export|Resolve|ConvertTo|ConvertFrom)-[A-Za-z][\w]*(?:\s|$)"
+    return bool(re.match(r"^(?:" + executable + "|" + assignment + "|" + cmdlet + ")", start, re.I))
+
+
+class Store:
+    def __init__(self, home=None, clock=time.time):
+        self.home = Path(home) if home is not None else state_home()
+        self.home.mkdir(parents=True, exist_ok=True)
+        self.path = self.home / "state.sqlite3"
+        self.clock = clock
+        # Keep the WAL open while this Store lives. This prevents a checkpoint/delete
+        # cycle on every GUI poll and lets concurrent hook processes read settings.
+        self._keeper = sqlite3.connect(self.path, timeout=2, check_same_thread=False)
+        self._keeper.execute("PRAGMA journal_mode=WAL")
+        self._keeper.execute("PRAGMA synchronous=NORMAL")
+        with self.db() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == 1:
+                return
+            db.executescript("""
+                CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS chats(
+                    id TEXT PRIMARY KEY, title TEXT NOT NULL, selected INTEGER NOT NULL DEFAULT 0,
+                    mode TEXT NOT NULL DEFAULT 'notify', expires REAL, last_seen REAL,
+                    native_seen REAL, source TEXT NOT NULL DEFAULT 'manual');
+                CREATE TABLE IF NOT EXISTS requests(
+                    id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_id TEXT NOT NULL,
+                    tool TEXT NOT NULL, fingerprint TEXT NOT NULL, source TEXT NOT NULL,
+                    status TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL,
+                    acknowledged INTEGER NOT NULL DEFAULT 0, push_at REAL NOT NULL DEFAULT 0,
+                    push_attempt REAL NOT NULL DEFAULT 0, push_error TEXT NOT NULL DEFAULT '');
+                CREATE INDEX IF NOT EXISTS requests_session ON requests(session_id, status);
+            """)
+            for key, value in DEFAULTS.items():
+                db.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", (key, json.dumps(value)))
+            db.execute("PRAGMA user_version=1")
+
+    def close(self):
+        keeper = getattr(self, "_keeper", None)
+        if keeper is not None:
+            self._keeper = None
+            keeper.close()
+
+    def __del__(self):
+        self.close()
+
+    @contextlib.contextmanager
+    def db(self):
+        db = sqlite3.connect(self.path, timeout=2)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA synchronous=NORMAL")
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
+
+    @staticmethod
+    def _get(db, key, default=None):
+        row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return json.loads(row[0]) if row else default
+
+    @staticmethod
+    def _set(db, key, value):
+        db.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", (key, json.dumps(value)))
+
+    def get(self, key, default=None):
+        with self.db() as db:
+            return self._get(db, key, default)
+
+    def set(self, key, value):
+        with self.db() as db:
+            self._set(db, key, value)
+
+    def settings(self):
+        with self.db() as db:
+            return {r["key"]: json.loads(r["value"]) for r in db.execute("SELECT * FROM settings")}
+
+    def upsert_chat(self, session, title=None, source="manual", native=False):
+        if not isinstance(session, str) or not SESSION_ID.fullmatch(session):
+            raise ValueError("Use the actual Codex chat ID, not the chat title.")
+        now = self.clock()
+        with self.db() as db:
+            db.execute("INSERT OR IGNORE INTO chats(id,title,source) VALUES (?,?,?)",
+                       (session, clean_label(title, session), source))
+            if title:
+                db.execute("UPDATE chats SET title=? WHERE id=?", (clean_label(title), session))
+            if native:
+                db.execute("UPDATE chats SET last_seen=?,native_seen=?,source='hook' WHERE id=?", (now, now, session))
+
+    def configure_chat(self, session, selected, mode="notify", minutes=0):
+        if mode not in {"notify", "auto_local"} or not 0 <= minutes <= 10080:
+            raise ValueError("Invalid chat mode or expiry.")
+        expires = self.clock() + minutes * 60 if minutes else None
+        with self.db() as db:
+            if not db.execute("SELECT 1 FROM chats WHERE id=?", (session,)).fetchone():
+                raise ValueError("Unknown chat ID.")
+            db.execute("UPDATE chats SET selected=?,mode=?,expires=? WHERE id=?",
+                       (int(bool(selected)), mode, expires, session))
+
+    def chats(self):
+        with self.db() as db:
+            return [dict(r) for r in db.execute("SELECT * FROM chats ORDER BY selected DESC,title COLLATE NOCASE,id")]
+
+    def heartbeat(self, owner):
+        with self.db() as db:
+            self._set(db, "heartbeat", {"owner": owner, "at": self.clock()})
+
+    def stop_heartbeat(self, owner):
+        with self.db() as db:
+            if self._get(db, "heartbeat", {}).get("owner") == owner:
+                self._set(db, "heartbeat", {})
+
+    def _active(self, db, session, now):
+        row = db.execute("SELECT * FROM chats WHERE id=?", (session,)).fetchone()
+        return row if row and row["selected"] and (row["expires"] is None or row["expires"] > now) else None
+
+    def handle_hook(self, event):
+        if not isinstance(event, dict) or event.get("hook_event_name") not in EVENTS:
+            return {}
+        session = event.get("session_id")
+        if not isinstance(session, str) or not SESSION_ID.fullmatch(session):
+            return {}
+        kind = event["hook_event_name"]
+        turn = str(event.get("turn_id") or "")[:200]
+        tool = str(event.get("tool_name") or "Unknown tool")[:200]
+        payload = json.dumps(event.get("tool_input"), sort_keys=True, separators=(",", ":"))
+        fingerprint = hashlib.sha256(payload.encode()).hexdigest()
+        with self.db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            # Evaluate expiry and heartbeat after acquiring the transaction lock.
+            now = self.clock()
+            db.execute("INSERT OR IGNORE INTO chats(id,title,source) VALUES (?,?,'hook')", (session, session))
+            db.execute("UPDATE chats SET last_seen=?,native_seen=?,source='hook' WHERE id=?", (now, now, session))
+            self._set(db, "native_event_at", now)
+            chat = self._active(db, session, now)
+            if kind == "PermissionRequest":
+                if not chat:
+                    return {}
+                hb = self._get(db, "heartbeat", {})
+                heartbeat_age = now - hb.get("at", 0)
+                active = not self._get(db, "paused", True) and 0 <= heartbeat_age < 12
+                # Only the documented local-tool approval contract. Other prompts remain native.
+                allow = active and chat["mode"] == "auto_local" and tool in LOCAL_TOOLS and bool(turn)
+                status = "allowed_by_hook" if allow else "pending"
+                db.execute("INSERT INTO requests(id,session_id,turn_id,tool,fingerprint,source,status,created,updated) VALUES (?,?,?,?,?,?,?,?,?)",
+                           (uuid.uuid4().hex, session, turn, tool, fingerprint, "hook", status, now, now))
+                if allow:
+                    return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}
+            elif kind == "PostToolUse" and turn:
+                # One completion clears at most one matching request, including concurrent identical calls.
+                row = db.execute("SELECT id FROM requests WHERE session_id=? AND turn_id=? AND tool=? AND fingerprint=? AND source='hook' AND status IN ('pending','allowed_by_hook') ORDER BY created,rowid LIMIT 1",
+                                 (session, turn, tool, fingerprint)).fetchone()
+                if row:
+                    db.execute("UPDATE requests SET status='tool_finished',updated=? WHERE id=?", (now, row[0]))
+            elif kind == "SessionEnd" or (kind in {"Stop", "Interrupt"} and turn):
+                clause = "session_id=?" if kind == "SessionEnd" else "session_id=? AND turn_id=?"
+                args = [session] if kind == "SessionEnd" else [session, turn]
+                db.execute(f"UPDATE requests SET status=?,updated=? WHERE {clause} AND source='hook' AND status IN ('pending','allowed_by_hook')",
+                           ["interrupted" if kind == "Interrupt" else "ended", now] + args)
+        return {}
+
+    def acknowledge(self, ids):
+        with self.db() as db:
+            db.executemany("UPDATE requests SET acknowledged=1,updated=? WHERE id=? AND status='pending'",
+                           [(self.clock(), value) for value in ids])
+
+    def requests(self, pending_only=False):
+        with self.db() as db:
+            query = "SELECT r.*,c.title,c.selected,c.expires FROM requests r JOIN chats c ON c.id=r.session_id"
+            if pending_only:
+                query += " WHERE r.status='pending'"
+            return [dict(r) for r in db.execute(query + " ORDER BY r.created DESC" + ("" if pending_only else " LIMIT 500"))]
+
+    def attention(self):
+        now = self.clock()
+        return [r for r in self.requests(True) if r["selected"] and not r["acknowledged"]
+                and (r["expires"] is None or r["expires"] > now)
+                and (r["source"] != "visible" or 0 <= now - r["updated"] < VISIBLE_TTL)]
+
+    def update_push(self, request_id, success, error=""):
+        with self.db() as db:
+            db.execute("UPDATE requests SET push_attempt=?,push_at=CASE WHEN ? THEN ? ELSE push_at END,push_error=? WHERE id=?",
+                       (self.clock(), bool(success), self.clock(), error[:200], request_id))
+
+    def visible_snapshot(self, cards):
+        """Read-only UI fallback. Its title-based observations never authorize an action."""
+        now = self.clock()
+        chats = self.chats()
+        # Duplicate titles cannot identify a conversation. Ignore them.
+        by_title = {}
+        for chat in chats:
+            by_title.setdefault(clean_label(chat["title"]).casefold(), []).append(chat)
+        seen = {}
+        with self.db() as db:
+            age = now - self._get(db, "visible_observed_at", 0)
+            previous = self._get(db, "visible_current", {}) if 0 <= age < VISIBLE_TTL else {}
+            for card in cards:
+                matches = by_title.get(clean_label(card.get("title")).casefold(), [])
+                if len(matches) != 1 or not self._active(db, matches[0]["id"], now):
+                    continue
+                session = matches[0]["id"]
+                # Native event evidence takes precedence for an outstanding request.
+                if db.execute("SELECT 1 FROM requests WHERE session_id=? AND source='hook' AND status='pending'", (session,)).fetchone():
+                    continue
+                identity = hashlib.sha256((session + ":" + str(card.get("key", ""))).encode()).hexdigest()
+                recent = db.execute("SELECT id FROM requests WHERE source='visible' AND fingerprint=? AND status IN ('pending','not_observed') AND updated>? ORDER BY created DESC LIMIT 1",
+                                    (identity, now - VISIBLE_TTL)).fetchone()
+                key = previous.get(identity) or (recent[0] if recent else "visible:" + uuid.uuid4().hex)
+                seen[identity] = key
+                row = db.execute("SELECT status FROM requests WHERE id=?", (key,)).fetchone()
+                if row and row[0] in {"pending", "not_observed"}:
+                    db.execute("UPDATE requests SET status='pending',updated=? WHERE id=?", (now, key))
+                elif not row:
+                    db.execute("INSERT OR REPLACE INTO requests(id,session_id,turn_id,tool,fingerprint,source,status,created,updated) VALUES (?,?,?,?,?,?,?,?,?)",
+                               (key, session, "", "Visible permission card", identity, "visible", "pending", now, now))
+            # Absence ends an observation, not a permission. Quiet its reminder
+            # without asserting that the user approved or the command completed.
+            current_ids = set(seen.values())
+            for row in db.execute("SELECT id FROM requests WHERE source='visible' AND status='pending'").fetchall():
+                if row["id"] not in current_ids:
+                    db.execute("UPDATE requests SET status='not_observed' WHERE id=?", (row["id"],))
+            self._set(db, "visible_observed_at", now)
+            self._set(db, "visible_count", len(seen))
+            self._set(db, "visible_current", seen)
+
+    def authorize_visible(self, card, current_titles):
+        """Fresh policy check for a structurally verified terminal UI card."""
+        if not isinstance(card, dict) or not terminal_command(card.get("command")):
+            return False
+        # Accessibility names flatten whitespace even when card text retains it.
+        # This is display correlation only; never normalize the executed command.
+        labels = {"Running " + card["command"], "Running " + " ".join(card["command"].split())}
+        if card.get("running_command") not in labels or not card.get("key"):
+            return False
+        session, title = card.get("session_id"), card.get("title")
+        if not isinstance(title, str) or current_titles.get(session) != title:
+            return False
+        if sum(t.casefold() == title.casefold() for t in current_titles.values()) != 1:
+            return False
+        with self.db() as db:
+            now = self.clock()
+            chat = self._active(db, session, now)
+            hb_age = now - self._get(db, "heartbeat", {}).get("at", 0)
+            return bool(chat and chat["title"] == title and chat["mode"] == "auto_local"
+                        and self._get(db, "visible_monitor", False)
+                        and not self._get(db, "paused", True) and 0 <= hb_age < 12
+                        and db.execute("SELECT COUNT(*) FROM chats WHERE title=? COLLATE NOCASE", (title,)).fetchone()[0] == 1)
+
+    def record_visible_approval(self, card):
+        """Record successful InvokePattern delivery, not command completion."""
+        with self.db() as db:
+            identity = hashlib.sha256((card["session_id"] + ":" + card["key"]).encode()).hexdigest()
+            key = self._get(db, "visible_current", {}).get(identity)
+            if key:
+                db.execute("UPDATE requests SET status='allowed_by_ui',acknowledged=1,updated=? WHERE id=? AND source='visible' AND status='pending'",
+                           (self.clock(), key))
+
+    def import_index(self, path):
+        """Optional best-effort labels, never parsed as approval state or policy."""
+        path = Path(path)
+        if not path.exists():
+            return 0
+        with path.open("rb") as handle:
+            size = handle.seek(0, 2)
+            start = max(0, size - 8_000_000)
+            handle.seek(start)
+            if start:
+                handle.readline()
+            lines = handle.read().decode("utf-8", errors="replace").splitlines()[-5000:]
+        count = 0
+        for line in lines:
+            try:
+                row = json.loads(line)
+                session = row.get("id") or row.get("thread_id")
+                title = row.get("thread_name") or row.get("title")
+                if not session or not title:
+                    continue
+                self.upsert_chat(session, title, source="index")
+                count += 1
+            except (ValueError, TypeError, AttributeError):
+                continue
+        return count
+
+    def prune(self):
+        with self.db() as db:
+            db.execute("DELETE FROM requests WHERE status!='pending' AND updated<?", (self.clock() - 30 * 86400,))

@@ -1,0 +1,15 @@
+Reconnect this Windows PC to Remote Desktop Commander so my other ChatGPT conversation can reach device 'Arjuk'.
+
+Check whether its existing bridge process is running and connected. If so, leave it running.
+
+Otherwise, use native terminal tools to start this in a separate persistent terminal window:
+npx.cmd --yes @wonderwhy-er/desktop-commander@latest remote
+
+Locate installed Node/npm executables if missing from PATH. Preserve existing device registration and credentials. Use computer control for the browser pairing page if needed. Stop for me to complete sign-in and confirm the matching device code. Leave the bridge terminal open.
+
+Verify the bridge reports connected. If Remote Desktop Commander tools are available, also confirm Arjuk is online and responds to ping. Distinguish terminal confirmation from an actual remote ping.
+
+Do not change Codex permissions or touch ControlledYOLO yet. Report connected status, device name, whether the bridge remains running, and any blocker.
+
+Official setup: https://github.com/desktop-commander/remote-desktop-commander/blob/main/docs/SETUP.md
+
