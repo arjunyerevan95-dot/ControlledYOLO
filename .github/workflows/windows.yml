@@ -1,0 +1,41 @@
+name: Windows build and checks
+on:
+  push:
+    branches: [main, tray-v2]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate assets
+        run: python scripts/make_assets.py
+      - name: Test core, Windows window, and PowerShell syntax
+        run: python -m unittest discover -s tests -v
+      - name: Install packager
+        run: python -m pip install pyinstaller==6.16.0
+      - name: Build standalone executable
+        run: python -m PyInstaller --clean --noconfirm --onefile --console --name ControlledYOLO --icon app/icons/running.ico --add-data "app/icons:icons" --add-data "app/chime.wav:." --add-data "app/VisibleMonitor.ps1:." app/main.py
+      - name: Verify frozen hook entry point
+        shell: pwsh
+        run: |
+          $env:CONTROLLEDYOLO_HOME = Join-Path $env:RUNNER_TEMP 'controlledyolo-hook-test'
+          '{}' | & .\dist\ControlledYOLO.exe --hook
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen hook smoke test failed' }
+          & .\dist\ControlledYOLO.exe --version
+          if ($LASTEXITCODE -ne 0) { throw 'Frozen version test failed' }
+      - name: Package Windows build
+        run: python scripts/package.py --exe dist/ControlledYOLO.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ControlledYOLO-2.0.0-windows
+          path: |
+            dist/ControlledYOLO-2.0.0-windows.zip
+            dist/ControlledYOLO-2.0.0-windows.sha256
+

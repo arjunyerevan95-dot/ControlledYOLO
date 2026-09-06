@@ -1,0 +1,10 @@
+Install ControlledYOLO 2 on this Windows PC from the tray-v2 branch of https://github.com/arjunyerevan95-dot/ControlledYOLO.
+
+Use native terminal and file tools. Read README.md and docs/VALIDATION.md first. Download downloads/ControlledYOLO-2.0.0.zip and its adjacent .sha256 file from the same resolved commit, verify the ZIP hash, and extract it to a new folder.
+
+Run Install.ps1 with -SelectTitle 'Bootstrap ControlPlane Console' -Mode auto_local. The installer adds the tray app, startup shortcut and native hook entries while preserving existing hooks and the original ControlledYOLO installation. If duplicate titles prevent identification, ask me to choose the exact chat ID.
+
+Let me complete Codex's /hooks trust review if required. Do not edit trust records or weaken managed settings. Open the tray app, test its chime, and confirm its actual hook-event status. I will select any additional chats in its list. Phone alerts are optional; do not invent a topic or credentials.
+
+Do not report native approval coverage as verified until a real harmless request from the selected chat has reached the hook. Confirm the unselected-chat, pause and quit behavior described in docs/VALIDATION.md. Leave the app running and report installation location, selected chats, native-event evidence, and any remaining limitation.
+
